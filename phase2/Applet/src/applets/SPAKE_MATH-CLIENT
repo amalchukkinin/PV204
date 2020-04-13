@@ -1,0 +1,66 @@
+
+ THIS IS JUST THE MATHEMATICS APPROACH I DID FOR SPAKE2 IN CLIENT/ APPLET SIDE- HAVE A LOOK
+
+
+        eccKey.genKeyPair();
+        pubkeyC=(ECPublicKey)(ECKey)eccKey.getPublic();
+        privKeyC= (ECPrivateKey)eccKey.getPrivate();
+        privKeyC.getG(arrayforG,(short) 0);
+        privKeyC.getA(arrayforA, (short)0);
+        //TODO
+        //send the ALICE- xG + wM;
+        
+        //Generating random number 'x'
+         m_secureRandom.generateData(x,(byte)0,(byte)16);
+        
+
+        System.out.println("The G  in applet");
+       
+        for (byte b : arrayforG) {
+            String st = String.format("%02X", b);
+            System.out.print(st);
+        }
+        
+       //multiplication x * G
+
+        BigInteger input1 = new BigInteger(1, x);
+        BigInteger input2 = new BigInteger(1, arrayforG);
+        BigInteger result = input1.multiply(input2);
+        System.out.println("checkk1");  
+
+        byte[] xG = result.toByteArray();
+        
+        System.out.println("Printing the mult");  
+        
+        for (byte b : xG) {
+            String st = String.format("%02X", b);
+            System.out.print(st);
+        }
+        
+        // xG + wM = next step
+        //wM calc, M used is in arrayforA
+        
+        BigInteger ip1 = new BigInteger(1, PIN);
+        BigInteger ip2 = new BigInteger(1, arrayforA);
+        BigInteger resultnew = ip1.multiply(ip2);
+        
+        System.out.println("checkk1");  
+
+        byte[] wM = resultnew.toByteArray();
+        
+        //final step T =wM +X
+        
+        byte[] T = new byte[xG.length + wM.length];
+        System.arraycopy(wM, 0, T, 0, wM.length);
+        System.arraycopy(xG, 0, T, wM.length, xG.length);
+        
+        //T IS READY TO BE SENT
+        System.out.println("Printing the T to sent");  
+        
+        for (byte b : T) {
+            String st = String.format("%02X", b);
+            System.out.print(st);
+        }
+        
+        System.out.println("\nThe lenght of T is"+T.length);
+        
