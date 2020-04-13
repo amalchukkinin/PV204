@@ -1,0 +1,83 @@
+       
+       
+       THIS IS THE MATHEMATICAL PART OF SPAKE 2  IN HOST/PC - JUST HAVE A LOOK
+       
+       
+       
+       
+       eccKey = new KeyPair(KeyPair.ALG_EC_FP, KeyBuilder.LENGTH_EC_FP_192);
+        eccKey.genKeyPair();
+
+        pubkeyC=(ECPublicKey)(ECKey)eccKey.getPublic();
+        privKeyC= (ECPrivateKey)eccKey.getPrivate();
+        privKeyC.getB(arrayforB,(short) 0);
+        privKeyC.getG(arrayforG,(short)0);
+        /*
+        System.out.println("The B is in host/PC");
+       
+        for (byte b : arrayforB) {
+            String st = String.format("%02X", b);
+            System.out.print(st);
+        }
+        */
+         
+
+        //TODO
+        // BOB to ALicE::::  S= yG + wN;
+        
+        //Generating random number 'y'
+         m_secureRandom = RandomData.getInstance(RandomData.ALG_SECURE_RANDOM);
+         m_secureRandom.generateData(y, (byte)0,(byte)0);
+         
+        System.out.println("checkk1");  
+
+        System.out.println("The G  in applet");
+       
+        for (byte b : arrayforG) {
+            String st = String.format("%02X", b);
+            System.out.print(st);
+        }
+        
+       //multiplication y * G
+
+        BigInteger input1 = new BigInteger(1, y);
+        BigInteger input2 = new BigInteger(1, arrayforG);
+        BigInteger result = input1.multiply(input2);
+        System.out.println("checkk1");  
+
+        byte[] yG = result.toByteArray();
+        
+        System.out.println("Printing the mult");  
+        
+        for (byte b : yG) {
+            String st = String.format("%02X", b);
+            System.out.print(st);
+        }
+        
+        // yG + wN = next step
+        //wN calc, N used is in arrayforB
+        
+        BigInteger ip1 = new BigInteger(1, pin);
+        BigInteger ip2 = new BigInteger(1, arrayforB);
+        BigInteger resultnew = ip1.multiply(ip2);
+        
+        System.out.println("checkk1");  
+
+        byte[] wN = resultnew.toByteArray();
+        
+        //final step S =wN + yG
+        
+        byte[] S = new byte[wN.length + yG.length];
+        System.arraycopy(wN, 0, S, 0, wN.length);
+        System.arraycopy(yG, 0, S, wN.length, yG.length);
+        
+        //S IS READY TO BE SENT
+        System.out.println("Printing the S to sent");  
+        
+        for (byte b : S) {
+            String st = String.format("%02X", b);
+            System.out.print(st);
+        }
+        
+        System.out.println("\nThe lenght of T is"+S.length);
+        
