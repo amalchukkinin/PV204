@@ -65,20 +65,14 @@ public class MathTest extends javacard.framework.Applet {
         byte[] apdubuf = apdu.getBuffer();
         short dataLen = apdu.setIncomingAndReceive();
         if (selectingApplet()) { return; } // Someone is going to use our applet
-        bigX.randomize(); 
-        // Set second point to predefined value
-        //bigT.setW(M_COMPRESSED, (short) 0, (short) M_COMPRESSED.length); 
-        // Add two points together 
-        //bigX.add(bigT); 
-        // Multiply point by large scalar
-        //bigX.multiplication(PIN_TEST, (short) 0, (short) PIN_TEST.length); 
-        short bigxlen = pubkey.getW(dataArray, (short) 0);
-        bigT.setW(dataArray, (short) 0, bigxlen);
-        //bigX.makeDouble();
-        //bigT.setW(M_COMPRESSED, (short) 0, (short) M_COMPRESSED.length);
-        bigX.multiplication(PIN_TEST, (short) 0, (short) PIN_TEST.length);
-        //short tlen = bigX.getW(dataArray,(short) 0);
-        //Util.arrayCopyNonAtomic(dataArray, (short) 0, apdubuf, ISO7816.OFFSET_CDATA, tlen);
-        //apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, tlen);
+        bigT.setW(M_COMPRESSED, (short) 0, (short) M_COMPRESSED.length); //T = M
+        bigT.multiplication(PIN_TEST, (short) 0, (byte) PIN_TEST.length); //T = wM - this multiplication is causing the issue
+        //bigT.makeDouble(); - This does not work either
+        short bigXlen = pubkey.getW(dataArray, (short) 0); // getting X length and saving it to "disk" as raw bytes
+        bigX.setW(dataArray, (short) 0, bigXlen); // making X point
+        bigT.add(bigX); //T = wM + X
+        short tlen = bigX.getW(dataArray,(short) 0);
+        Util.arrayCopyNonAtomic(dataArray, (short) 0, apdubuf, ISO7816.OFFSET_CDATA, tlen);
+        apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, tlen);
     }
 }
