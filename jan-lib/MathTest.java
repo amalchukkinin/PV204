@@ -27,6 +27,7 @@ public class MathTest extends javacard.framework.Applet {
     ECPrivateKey    privkey = null;
     ECPublicKey     pubkey = null;
     Bignat          smallx = null;
+    Bignat          userpin = null;
     
     final static byte[] PIN_TEST = {(byte) 0x01, (byte) 0x02, (byte) 0x03, (byte) 0x04};
     final static byte[] N_COMPRESSED = {(byte) 0x03, (byte) 0xD8, (byte) 0xBB, (byte) 0xD6, (byte) 0xC6, (byte) 0x39, (byte) 0xC6, (byte) 0x29, (byte) 0x37, (byte) 0xB0, (byte) 0x4D, (byte) 0x99, (byte) 0x7F, (byte) 0x38, (byte) 0xC3, (byte) 0x77, (byte) 0x07, (byte) 0x19, (byte) 0xC6, (byte) 0x29, (byte) 0xD7, (byte) 0x01, (byte) 0x4D, (byte) 0x49, (byte) 0xA2, (byte) 0x4B, (byte) 0x4F, (byte) 0x98, (byte) 0xBA, (byte) 0xA1, (byte) 0x29, (byte) 0x2B, (byte) 0x49};
@@ -49,6 +50,7 @@ public class MathTest extends javacard.framework.Applet {
         byte[] smallxdata = new byte[smallxlen];
         privkey.getS(smallxdata, (short) 0);
         smallx = new Bignat(smallxdata, ecc.bnh);
+        userpin = new Bignat(PIN_TEST,ecc.bnh);
     }
     // Installation of our applet
     public static void install(byte[] bArray, short bOffset, byte bLength) {
@@ -63,10 +65,13 @@ public class MathTest extends javacard.framework.Applet {
     // NOTE: very simple EC usage example - no cla/ins, no communication with host...    
     public void process(APDU apdu) {
         byte[] apdubuf = apdu.getBuffer();
+        byte[] testarray =new byte[200]; // doesnt bothered about the size..
         short dataLen = apdu.setIncomingAndReceive();
         if (selectingApplet()) { return; } // Someone is going to use our applet
         bigT.setW(M_COMPRESSED, (short) 0, (short) M_COMPRESSED.length); //T = M
-        bigT.multiplication(PIN_TEST, (short) 0, (byte) PIN_TEST.length); //T = wM - this multiplication is causing the issue
+        bigT.multiplication_x(userpin, testarray, (short)0);//userpin is Bignat Scalar, wM stored in testarray.
+
+        //bigT.multiplication(PIN_TEST, (short) 0, (byte) PIN_TEST.length); //T = wM - this multiplication is causing the issue
         //bigT.makeDouble(); - This does not work either
         short bigXlen = pubkey.getW(dataArray, (short) 0); // getting X length and saving it to "disk" as raw bytes
         bigX.setW(dataArray, (short) 0, bigXlen); // making X point
