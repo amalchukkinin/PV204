@@ -1,61 +1,51 @@
 package applets;
 
-import com.licel.jcardsim.bouncycastle.util.encoders.Hex;
-import java.math.BigInteger;
-import java.nio.ByteBuffer;
 import java.security.NoSuchAlgorithmException;
-import java.security.SecureRandom;
-import java.util.Arrays;
 import javacard.framework.*;
 import javacard.security.*;
-import javacardx.crypto.*;
-import simpleapdu.CardMngr;
+import javacard.framework.APDU;
+import javacard.framework.ISO7816;
+import javacard.framework.ISOException;
+import javacard.framework.Util;
+import javacard.security.KeyPair;
+import opencrypto.jcmathlib.*;
 
 
 import javacard.security.ECPrivateKey;
 import javacard.security.ECPublicKey;
-import javacard.security.KeyBuilder;
 
 ;
 
 public class SimpleApplet extends javacard.framework.Applet {
 
-    
-    byte[] myG= new byte[255]; 
-    private byte[] tempBuffer;
-    //byte[] arrayforG;
-    private byte[] flags;
-    private static final short FLAGS_SIZE = (short)5;
-    private byte[] arrayforG = new byte[49];
-    private byte[] arrayforA = new byte[24];
-    private byte[] arrayforB = new byte[24];
-    private short eccKeyLen;
-    private Signature ecdsa;
-    private KeyPair eccKey;
-    ECKey keyforus;
-    ECPublicKey pubkeyC;
-    ECPrivateKey privKeyC;
-    
-    //pin
-    private byte PIN[] = {(byte) 0x31, (byte) 0x32, (byte) 0x33, (byte) 0x34};
-    private byte dummy[] = {(byte) 0x31, (byte) 0x32, (byte) 0x33, (byte) 0x34};
-    //random number
-    private byte x[] =new byte[16];
-    // MAIN INSTRUCTION CLASS
+ 
+   
+    private byte dataArray1[] = null;
+    private byte dataArray2[] = null;
 
+    ECConfig        ecc = null;
+    ECCurve         curve = null;
+    ECPoint         bigX = null;
+    ECPoint         bigT = null;
+    ECPoint         bigS = null;
+    ECPoint         bobShared = null;
+    KeyPair         kp = null;
+    ECPrivateKey    privkey = null;
+    ECPublicKey     pubkey = null;
+    Bignat          smallx = null;
+    Bignat          userpin = null;
+    
+    final static byte[] PIN_TEST = {(byte) 0x31, (byte) 0x32, (byte) 0x33, (byte) 0x34};
+    final static byte[] N_COMPRESSED = {(byte) 0x03, (byte) 0xD8, (byte) 0xBB, (byte) 0xD6, (byte) 0xC6, (byte) 0x39, (byte) 0xC6, (byte) 0x29, (byte) 0x37, (byte) 0xB0, (byte) 0x4D, (byte) 0x99, (byte) 0x7F, (byte) 0x38, (byte) 0xC3, (byte) 0x77, (byte) 0x07, (byte) 0x19, (byte) 0xC6, (byte) 0x29, (byte) 0xD7, (byte) 0x01, (byte) 0x4D, (byte) 0x49, (byte) 0xA2, (byte) 0x4B, (byte) 0x4F, (byte) 0x98, (byte) 0xBA, (byte) 0xA1, (byte) 0x29, (byte) 0x2B, (byte) 0x49};
+    final static byte[] M_COMPRESSED = {(byte) 0x02, (byte) 0x88, (byte) 0x6E, (byte) 0x2F, (byte) 0x97, (byte) 0xAC, (byte) 0xE4, (byte) 0x6E, (byte) 0x55, (byte) 0xBA, (byte) 0x9D, (byte) 0xD7, (byte) 0x24, (byte) 0x25, (byte) 0x79, (byte) 0xF2, (byte) 0x99, (byte) 0x3B, (byte) 0x64, (byte) 0xE1, (byte) 0x6E, (byte) 0xF3, (byte) 0xDC, (byte) 0xAB, (byte) 0x95, (byte) 0xAF, (byte) 0xD4, (byte) 0x97, (byte) 0x33, (byte) 0x3D, (byte) 0x8F, (byte) 0xA1, (byte) 0x2F};
+
+   
     final static byte CLA_SIMPLEAPPLET = (byte) 0xB0;
 
     // INSTRUCTIONS
-    final static byte INS_ENCRYPT = (byte) 0x50;
-    final static byte INS_DECRYPT = (byte) 0x51;
-    final static byte INS_SETKEY = (byte) 0x52;
-    final static byte INS_HASH = (byte) 0x53;
+    
     final static byte INS_RANDOM = (byte) 0x54;
-    final static byte INS_VERIFYPIN = (byte) 0x55;
-    final static byte INS_SETPIN = (byte) 0x56;
-    final static byte INS_RETURNDATA = (byte) 0x57;
-    final static byte INS_SIGNDATA = (byte) 0x58;
-
+    
     final static short ARRAY_LENGTH = (short) 0xff;
     final static byte AES_BLOCK_LENGTH = (short) 0x16;
 
@@ -77,22 +67,7 @@ public class SimpleApplet extends javacard.framework.Applet {
     final static short SW_TransactionException_prefix = (short) 0xf400;
     final static short SW_CardRuntimeException_prefix = (short) 0xf500;
 
-    private AESKey m_aesKey = null;
-    private Cipher m_encryptCipher = null;
-    private Cipher m_decryptCipher = null;
-    private RandomData m_secureRandom = null;
-    private MessageDigest m_hash = null;
-    private OwnerPIN m_pin = null;
-    private Signature m_sign = null;
-    private KeyPair m_keyPair = null;
-    private Key m_privateKey = null;
-    private Key m_publicKey = null;
-
-    // TEMPORARRY ARRAY IN RAM
-    private byte m_ramArray[] = null;
-    // PERSISTENT ARRAY IN EEPROM
-    private byte m_dataArray[] = null;
-
+ 
     /**
      * SimpleApplet default constructor Only this class's install method should
      * create the applet object.
@@ -122,55 +97,38 @@ public class SimpleApplet extends javacard.framework.Applet {
             // go to proprietary data
             dataOffset++;
 
-            m_dataArray = new byte[ARRAY_LENGTH];
-            Util.arrayFillNonAtomic(m_dataArray, (short) 0, ARRAY_LENGTH, (byte) 0);
-
-            // CREATE AES KEY OBJECT
-            m_aesKey = (AESKey) KeyBuilder.buildKey(KeyBuilder.TYPE_AES, KeyBuilder.LENGTH_AES_256, false);
-            // CREATE OBJECTS FOR CBC CIPHERING
-            m_encryptCipher = Cipher.getInstance(Cipher.ALG_AES_BLOCK_128_CBC_NOPAD, false);
-            m_decryptCipher = Cipher.getInstance(Cipher.ALG_AES_BLOCK_128_CBC_NOPAD, false);
-
-            // CREATE RANDOM DATA GENERATORS
-            m_secureRandom = RandomData.getInstance(RandomData.ALG_SECURE_RANDOM);
-
-            // TEMPORARY BUFFER USED FOR FAST OPERATION WITH MEMORY LOCATED IN RAM
-            m_ramArray = JCSystem.makeTransientByteArray((short) 260, JCSystem.CLEAR_ON_DESELECT);
-
-            // SET KEY VALUE
-            m_aesKey.setKey(m_dataArray, (short) 0);
-
-            // INIT CIPHERS WITH NEW KEY
-            m_encryptCipher.init(m_aesKey, Cipher.MODE_ENCRYPT);
-            m_decryptCipher.init(m_aesKey, Cipher.MODE_DECRYPT);
-
-            m_pin = new OwnerPIN((byte) 5, (byte) 4); // 5 tries, 4 digits in pin
-            m_pin.update(PIN, (byte) 0, (byte) 4); // set  pin
-            //printing PIN
-            
-
-           
-
-            // CREATE RSA KEYS AND PAIR 
-            m_keyPair = new KeyPair(KeyPair.ALG_RSA_CRT, KeyBuilder.LENGTH_RSA_2048);
-            m_keyPair.genKeyPair(); // Generate fresh key pair on-card
-            m_publicKey = m_keyPair.getPublic();
-            m_privateKey = m_keyPair.getPrivate();
-            // SIGNATURE ENGINE    
-            m_sign = Signature.getInstance(Signature.ALG_RSA_SHA_PKCS1, false);
-            // INIT WITH PRIVATE KEY
-            m_sign.init(m_privateKey, Signature.MODE_SIGN);
-
-            // INIT HASH ENGINE
-            m_hash = MessageDigest.getInstance(MessageDigest.ALG_SHA, false);
-
-            // update flag
+        dataArray1 = new byte[100];
+        Util.arrayFillNonAtomic(dataArray1, (short) 0, (short) 100, (byte) 0);
+        dataArray2 = new byte[100];
+        Util.arrayFillNonAtomic(dataArray2, (short) 0, (short) 100, (byte) 0);
+        // Pre-allocate all helper structures
+        ecc = new ECConfig((short) 256); 
+        // Pre-allocate standard SecP256r1 curve and two EC points on this curve
+        curve = new ECCurve(false, SecP256r1.p, SecP256r1.a, SecP256r1.b, SecP256r1.G, SecP256r1.r);
+        bigX = new ECPoint(curve, ecc.ech);
+        bigT = new ECPoint(curve, ecc.ech);
+        bigS = new ECPoint(curve, ecc.ech);
+        bobShared = new ECPoint(curve, ecc.ech);
+        kp = new KeyPair(KeyPair.ALG_EC_FP, (short) 256);
+        kp.genKeyPair();
+        privkey = (ECPrivateKey) kp.getPrivate();
+        pubkey = (ECPublicKey) kp.getPublic();
+        short smallxlen = privkey.getS(dataArray1, (short) 0);
+        byte[] smallxdata = new byte[smallxlen];
+        privkey.getS(smallxdata, (short) 0);
+        smallx = new Bignat(smallxdata, ecc.bnh);
+        userpin = new Bignat(PIN_TEST,ecc.bnh);
+        
+        
+        // update flag
             isOP2 = true;
 
         } 
 
         // register this instance
         register();
+
+        
     }
 
     /**
@@ -191,7 +149,6 @@ public class SimpleApplet extends javacard.framework.Applet {
      * @return boolean status of selection.
      */
     public boolean select() {
-        clearSessionData();
         
         return true;
     }
@@ -200,7 +157,6 @@ public class SimpleApplet extends javacard.framework.Applet {
      * Deselect method called by the system in the deselection process.
      */
     public void deselect() {
-        clearSessionData();
     }
 
     
@@ -208,208 +164,70 @@ public class SimpleApplet extends javacard.framework.Applet {
     
      private void GenEccKeyPair(APDU apdu, short len) throws NoSuchAlgorithmException
     {
-        byte[] buffer = apdu.getBuffer();
         
-        short keyLen = (short)0;
-        byte[] apdubuf = apdu.getBuffer();
-        switch (buffer[ISO7816.OFFSET_P1])
-        {
-        case (byte)0x01: // 192
-            //Constructs a KeyPair instance for the specified algorithm and keylength;
-            eccKey = new KeyPair(KeyPair.ALG_EC_FP, KeyBuilder.LENGTH_EC_FP_192);
-            keyLen = (short)24;
-            //System.out.println("Hai i am applet");  
-            break;
-        case (byte)0x02:
-            //Here, the KeyBuilder.LENGTH_EC_FP_256 only be used in JavaCard API 3.0.4
-            eccKey = new KeyPair(KeyPair.ALG_EC_FP, KeyBuilder.LENGTH_EC_FP_256);
-            keyLen = (short)32;
-            break;
-        case (byte)0x03: // 384
-            //Here, the KeyBuilder.LENGTH_EC_FP_384 only be used in JavaCard API 3.0.4
-            eccKey = new KeyPair(KeyPair.ALG_EC_FP,KeyBuilder.LENGTH_EC_FP_384); 
-            keyLen = (short)48;
-            break;
-        default:
-            ISOException.throwIt(ISO7816.SW_INCORRECT_P1P2);
-            break;
-        }
-        //(Re)Initializes the key objects encapsulated in this 'eccKey' KeyPair instance with new key values.
-        /*
-        eccKey.genKeyPair();
-        keyforus=(ECKey)eccKey.getPublic();
-        keyforus.getG(arrayforG, len);
-        System.out.println("The G is");
-        System.out.println(Arrays.toString(arrayforG));
-        eccKeyLen = keyLen;
-        */
-        //System.out.println("Enterd the ecc function in BOB");
-        eccKey.genKeyPair();
+        byte[] buffer = apdu.getBuffer();
 
-        pubkeyC=(ECPublicKey)(ECKey)eccKey.getPublic();
-        privKeyC= (ECPrivateKey)eccKey.getPrivate();
-        privKeyC.getG(arrayforG,(short) 0);
-        privKeyC.getA(arrayforA, (short)0);
-        privKeyC.getB(arrayforB, (short)0);
+        byte[] apdubuf = apdu.getBuffer();
+
         //TODO
         //BOB TO ALICE- xG + wM;
         
         //CALCULATES SECRET= x(S-wN)
-        
-        //Generating random number 'x'
-        int prime=1500450271;
-         //byte[] prime= {(byte) 0x31, (byte) 0x35, (byte) 0x30, (byte) 0x30,(byte) 0x34, (byte) 0x35,(byte) 0x30, (byte) 0x32,(byte) 0x37,
-         //(byte) 0x31};
-         SecureRandom secureRandomGenerator = SecureRandom.getInstance("SHA1PRNG");
-     
-        // Get 128 random bytes
-        byte[] randomBytes = new byte[10];
-        int i=0;
-        secureRandomGenerator.nextBytes(randomBytes);
-        
+        short dataLen = apdu.getIncomingLength(); 
 
-        ByteBuffer wrapped = ByteBuffer.wrap(randomBytes); // big-endian by default
-        int x = wrapped.getInt();
-        while(i<1){
-        if(x<prime){
-        i=1;    
-        }
-        else{
-        secureRandomGenerator.nextBytes(randomBytes);
-        ByteBuffer wrappd = ByteBuffer.wrap(randomBytes); // big-endian by default
-        x = wrappd.getShort();
-        }
-        }
-        //System.out.println("\nTHE RANDOM NUMBER GEN IN BOB/APPLET IS " +x);
-        
-        
-        ByteBuffer wrappdG = ByteBuffer.wrap(arrayforG); // big-endian by default
-        int G = wrappdG.getInt();
+        byte test[]=new byte[dataLen];
 
-        //System.out.println("\nTHE G IN APPLET/BOB IS " +G);
-       
+        System.arraycopy(apdubuf,ISO7816.OFFSET_CDATA,test,(short)0,dataLen);
+        System.out.println("\nPRINTING THE S CAME FROM APDU/PC:");  
         
-        
-       //multiplication x * G
-
-        int xG = x*G;
-
-        
-        
-        //System.out.println("\nTHE VALUE OF xG CALCULATED IN BOB/APPLET IS " +xG);  
-        
-     
-        
-        // xG + wM = next step
-        //wM calc, M used is in arrayforA and w is the pin 
-        
-        //System.out.println("\nTHE VALUE OF PIN AS STORED IN  BOB/APPLET IS ");  
-         
-        
-        ByteBuffer wrappdpin = ByteBuffer.wrap(PIN); // big-endian by default
-        int w = wrappdpin.getInt();
-      
-        ByteBuffer wrappdA = ByteBuffer.wrap(arrayforA); // big-endian by default
-        int M = wrappdA.getInt();
-        
-        int wM= w*M;
-        
-        //System.out.println("checkk1");  
-
-         
-        
-        //System.out.println("\nTHE VALUE OF wM IN  BOB/APPLET IS " +wM);  
-        
-     
-        //final step T =X +wM
-        
-        int Tint = xG+wM;
-        
-        //T IS READY TO BE SENT
-        //System.out.println("\nTHE T IS READY TO BE SENT FROM BOB " +Tint);  
-        
-        byte Tarray[]= ByteBuffer.allocate(4).putInt(Tint).array();
-        
-        
-        //System.out.println("\nTHE LENGTH OF T IS "+Tarray.length);
-        
-        //System.out.println("\nPRINTING THE T IN BYTE ARRAY :");  
-        
-        for (byte b : Tarray) {
+        for (byte b : test) {
             String st = String.format("%02X", b);
             System.out.print(st);
         }
         
         
-        short SfromALiceLen = apdubuf[ISO7816.OFFSET_LC];
-        byte[] SfromAlice = new byte[SfromALiceLen];
-        //copy random number to counter
-        Util.arrayCopyNonAtomic(apdubuf, ISO7816.OFFSET_CDATA, SfromAlice, (short) 0, SfromALiceLen);
-
+  
+        bigS.setW(apdubuf,ISO7816.OFFSET_CDATA, dataLen); //S = S
+        bobShared.setW(N_COMPRESSED, (short) 0, (short) N_COMPRESSED.length); //Shared = N
+        short bobSharedLen = bobShared.multiplication_x(userpin, dataArray1, (short) 0); // wN stored into memory
+        bobShared.setW(dataArray1, (short) 0, bobSharedLen); // Shared = wN
+        bobShared.negate(); // Shared = -wN
+        bobShared.add(bigS); // Shared = S - wN
+        bobSharedLen = bobShared.multiplication_x(smallx, dataArray1, (short) 0); // Putting x*(S-wN) into memory
+        bobShared.setW(dataArray1, (short) 0, bobSharedLen); // Shared = x*(S-wN) = x*y*G
         
+        System.out.println("\nPRINTING THE SHARED SECRET IN CARD:");  
         
-        
-        //printing check
-        ByteBuffer wrappedSfromAlice = ByteBuffer.wrap(SfromAlice); // big-endian by default
-        int S = wrappedSfromAlice.getInt();
-      
-        //System.out.println("\n PRINTING THE S THAT CAME FROM ALICE IN APDU :" +S);  
-
- 
-         // COPY T INTO OUTGOING BUFFER
-        //Util.arrayCopyNonAtomic(Tarray, (short) 0, apdubuf, ISO7816.OFFSET_CDATA,(short)5);
-        //System.arraycopy(Tarray, (short)0, apdubuf, ISO7816.OFFSET_CDATA,(short)5);
-        Util.arrayCopyNonAtomic(Tarray, (short)0,apdubuf,ISO7816.OFFSET_CDATA, SfromALiceLen);
-
-                 
-        
-        // SEND OUTGOING BUFFER
-        
-        //System.out.println("\n  CHECK FOR T IN BOb");
-       
-        for (byte b : Tarray) {
+        for (byte b : dataArray1) {
             String st = String.format("%02X", b);
             System.out.print(st);
         }
-        apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, SfromALiceLen);
-        
-        
-        
-        //CALCULATING THE SHARED SECRET
-        
-        //x(S-wN)
-        //step1= calculate wN
-        
-        ByteBuffer wrappdB = ByteBuffer.wrap(arrayforB); // big-endian by default
-        int B = wrappdB.getInt();
-        int wN= B*w;
-        
-        //System.out.println("checkk1");  
+        System.out.println("\n");
 
         
-        //System.out.println("\nCALCULATED wN IN THE APPLET/BOB is  :" +wN);  
-        
-       
-        //nextstep = (S-wN)
-        int SsubwN= S- wN;       
-        //System.out.println("\nCALCULATED S - wN IN THE APPLET/BOB is  :" +SsubwN);  
-        
-        
-       
-      
-       //NEXT STEP= x(S-wN)
-       
-        int sharedsec= x *SsubwN;
-        
-        //System.out.println("checkk1");  
 
-     
-        System.out.println("\nSHARED SECRET IN BOB/APPLET is " +sharedsec);  
-      
-        System.out.println("\n\n\n");
-        
-        
-        
+
+        //CALCULATION OF T = wM + X
+        bigT.setW(M_COMPRESSED, (short) 0, (short) M_COMPRESSED.length); //T = M
+
+        short tlen = bigT.multiplication_x(userpin, dataArray2, (short)0);//userpin is Bignat Scalar, wM stored in "memory".
+        bigT.setW(dataArray2, (short) 0, tlen); // T = wM
+
+        short bigXlen = pubkey.getW(dataArray2, (short) 0); // getting X length and saving it to "memory" as raw bytes
+        bigX.setW(dataArray2, (short) 0, bigXlen); // making X point
+        bigT.add(bigX); //T = wM + X
+        tlen = bigT.getW(dataArray2,(short) 0); //measuring length of T again and saving it to "memory"
+        Util.arrayCopyNonAtomic(dataArray2, (short) 0, apdubuf, ISO7816.OFFSET_CDATA, tlen); // copying to APDU
+        System.out.println("\nPRINTING THE T IN CARD:");  
+        System.out.println("THE tlen is "+tlen);
+        byte test1[] =new byte[tlen];
+        System.arraycopy(apdubuf, ISO7816.OFFSET_CDATA, test1,(short)0,tlen);
+        for (byte b : test1) {
+            String st = String.format("%02X", b);
+            System.out.print(st);
+        }
+        System.out.println("\n");
+        apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, tlen); //sending T = wM + X
         
         
     }
@@ -434,9 +252,6 @@ public class SimpleApplet extends javacard.framework.Applet {
 
         //System.out.println("the length is "+len);
         // ignore the applet select command dispached to the process
-        
-       
-            
        
         try {
             
@@ -444,33 +259,11 @@ public class SimpleApplet extends javacard.framework.Applet {
             if (apduBuffer[ISO7816.OFFSET_CLA] == CLA_SIMPLEAPPLET) {
                 
                 switch (apduBuffer[ISO7816.OFFSET_INS]) {
-                    case INS_SETKEY:
-                        SetKey(apdu);
-                        break;
-                    case INS_ENCRYPT:
-                        Encrypt(apdu);
-                        break;
-                    case INS_DECRYPT:
-                        Decrypt(apdu);
-                        break;
-                    case INS_HASH:
-                        Hash(apdu);
-                        break;
+                    
                     case INS_RANDOM:
                         GenEccKeyPair(apdu,len);
                         break;
-                    case INS_VERIFYPIN:
-                        VerifyPIN(apdu);
-                        break;
-                    case INS_SETPIN:
-                        SetPIN(apdu);
-                        break;
-                    case INS_RETURNDATA:
-                        ReturnData(apdu);
-                        break;
-                    case INS_SIGNDATA:
-                        Sign(apdu);
-                        break;
+                    
                     default:
                         // The INS code is not supported by the dispatcher
                         ISOException.throwIt(ISO7816.SW_INS_NOT_SUPPORTED);
@@ -508,144 +301,5 @@ public class SimpleApplet extends javacard.framework.Applet {
         }
     }
 
-    void clearSessionData() {
-        // E.g., fill sesssion data in RAM with zeroes
-        Util.arrayFillNonAtomic(m_ramArray, (short) 0, (short) m_ramArray.length, (byte) 0);
-        // Or better fill with random data
-        m_secureRandom.generateData(m_ramArray, (short) 0, (short) m_ramArray.length);
-    }
-    
-    // SET ENCRYPTION & DECRYPTION KEY
-    void SetKey(APDU apdu) {
-        byte[] apdubuf = apdu.getBuffer();
-        short dataLen = apdu.setIncomingAndReceive();
-
-        // CHECK EXPECTED LENGTH
-        if ((short) (dataLen * 8) != KeyBuilder.LENGTH_AES_256) {
-            ISOException.throwIt(SW_KEY_LENGTH_BAD);
-        }
-
-        // SET KEY VALUE
-        m_aesKey.setKey(apdubuf, ISO7816.OFFSET_CDATA);
-
-        // INIT CIPHERS WITH NEW KEY
-        m_encryptCipher.init(m_aesKey, Cipher.MODE_ENCRYPT);
-        m_decryptCipher.init(m_aesKey, Cipher.MODE_DECRYPT);
-    }
-
-    // ENCRYPT INCOMING BUFFER
-    void Encrypt(APDU apdu) {
-        byte[] apdubuf = apdu.getBuffer();
-        short dataLen = apdu.setIncomingAndReceive();
-
-        // CHECK EXPECTED LENGTH (MULTIPLY OF AES BLOCK LENGTH)
-        if ((dataLen % 16) != 0) {
-            ISOException.throwIt(SW_CIPHER_DATA_LENGTH_BAD);
-        }
-
-        // ENCRYPT INCOMING BUFFER
-        m_encryptCipher.doFinal(apdubuf, ISO7816.OFFSET_CDATA, dataLen, m_ramArray, (short) 0);
-        // NOTE: In-place encryption directly with apdubuf as output can be performed. m_ramArray used to demonstrate Util.arrayCopyNonAtomic
-
-        // COPY ENCRYPTED DATA INTO OUTGOING BUFFER
-        Util.arrayCopyNonAtomic(m_ramArray, (short) 0, apdubuf, ISO7816.OFFSET_CDATA, dataLen);
-
-        // SEND OUTGOING BUFFER
-        apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, dataLen);
-    }
-
-    // DECRYPT INCOMING BUFFER
-    void Decrypt(APDU apdu) {
-        byte[] apdubuf = apdu.getBuffer();
-        short dataLen = apdu.setIncomingAndReceive();
-
-        // CHECK EXPECTED LENGTH (MULTIPLY OF AES BLOCK LENGTH)
-        if ((dataLen % 16) != 0) {
-            ISOException.throwIt(SW_CIPHER_DATA_LENGTH_BAD);
-        }
-
-        // ENCRYPT INCOMING BUFFER
-        m_decryptCipher.doFinal(apdubuf, ISO7816.OFFSET_CDATA, dataLen, m_ramArray, (short) 0);
-
-        // COPY ENCRYPTED DATA INTO OUTGOING BUFFER
-        Util.arrayCopyNonAtomic(m_ramArray, (short) 0, apdubuf, ISO7816.OFFSET_CDATA, dataLen);
-
-        // SEND OUTGOING BUFFER
-        apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, dataLen);
-    }
-
-    // HASH INCOMING BUFFER
-    void Hash(APDU apdu) {
-        byte[] apdubuf = apdu.getBuffer();
-        short dataLen = apdu.setIncomingAndReceive();
-
-        if (m_hash != null) {
-            m_hash.doFinal(apdubuf, ISO7816.OFFSET_CDATA, dataLen, m_ramArray, (short) 0);
-        } else {
-            ISOException.throwIt(SW_OBJECT_NOT_AVAILABLE);
-        }
-
-        // COPY ENCRYPTED DATA INTO OUTGOING BUFFER
-        Util.arrayCopyNonAtomic(m_ramArray, (short) 0, apdubuf, ISO7816.OFFSET_CDATA, m_hash.getLength());
-
-        // SEND OUTGOING BUFFER
-        apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, m_hash.getLength());
-    }
-
-    // GENERATE RANDOM DATA
-    void Random(APDU apdu) {
-        byte[] apdubuf = apdu.getBuffer();
-
-        // GENERATE DATA
-        short randomDataLen = apdubuf[ISO7816.OFFSET_P1];
-        m_secureRandom.generateData(apdubuf, ISO7816.OFFSET_CDATA, randomDataLen);
-
-        // SEND OUTGOING BUFFER
-        apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, randomDataLen);
-    }
-
-    // VERIFY PIN
-    void VerifyPIN(APDU apdu) {
-        byte[] apdubuf = apdu.getBuffer();
-        short dataLen = apdu.setIncomingAndReceive();
-
-        // VERIFY PIN
-        if (m_pin.check(apdubuf, ISO7816.OFFSET_CDATA, (byte) dataLen) == false) {
-            ISOException.throwIt(SW_BAD_PIN);
-        }
-    }
-
-    // SET PIN 
-    // Be aware - this method will allow attacker to set own PIN - need to protected. 
-    // E.g., by additional Admin PIN or all secret data of previous user needs to be reased 
-    void SetPIN(APDU apdu) {
-        byte[] apdubuf = apdu.getBuffer();
-        short dataLen = apdu.setIncomingAndReceive();
-
-        // SET NEW PIN
-        m_pin.update(apdubuf, ISO7816.OFFSET_CDATA, (byte) dataLen);
-    }
-
-    // RETURN INPU DATA UNCHANGED
-    void ReturnData(APDU apdu) {
-        byte[] apdubuf = apdu.getBuffer();
-        short dataLen = apdu.setIncomingAndReceive();
-
-        apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, dataLen);
-    }
-
-    void Sign(APDU apdu) {
-        byte[] apdubuf = apdu.getBuffer();
-        short dataLen = apdu.setIncomingAndReceive();
-        short signLen = 0;
-
-        // SIGN INCOMING BUFFER
-        signLen = m_sign.sign(apdubuf, ISO7816.OFFSET_CDATA, (byte) dataLen, m_ramArray, (byte) 0);
-
-        // COPY SIGNED DATA INTO OUTGOING BUFFER
-        Util.arrayCopyNonAtomic(m_ramArray, (short) 0, apdubuf, ISO7816.OFFSET_CDATA, signLen);
-
-        // SEND OUTGOING BUFFER
-        apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, signLen);
-    }
+        
 }
