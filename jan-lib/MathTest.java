@@ -65,19 +65,16 @@ public class MathTest extends javacard.framework.Applet {
     // NOTE: very simple EC usage example - no cla/ins, no communication with host...    
     public void process(APDU apdu) {
         byte[] apdubuf = apdu.getBuffer();
-        byte[] testarray =new byte[200]; // doesnt bothered about the size..
         short dataLen = apdu.setIncomingAndReceive();
         if (selectingApplet()) { return; } // Someone is going to use our applet
         bigT.setW(M_COMPRESSED, (short) 0, (short) M_COMPRESSED.length); //T = M
-        bigT.multiplication_x(userpin, testarray, (short)0);//userpin is Bignat Scalar, wM stored in testarray.
-
-        //bigT.multiplication(PIN_TEST, (short) 0, (byte) PIN_TEST.length); //T = wM - this multiplication is causing the issue
-        //bigT.makeDouble(); - This does not work either
-        short bigXlen = pubkey.getW(dataArray, (short) 0); // getting X length and saving it to "disk" as raw bytes
+        short tlen = bigT.multiplication_x(userpin, dataArray, (short)0);//userpin is Bignat Scalar, wM stored in "memory".
+        bigT.setW(dataArray, (short) 0, tlen); // T = wM
+        short bigXlen = pubkey.getW(dataArray, (short) 0); // getting X length and saving it to "memory" as raw bytes
         bigX.setW(dataArray, (short) 0, bigXlen); // making X point
         bigT.add(bigX); //T = wM + X
-        short tlen = bigX.getW(dataArray,(short) 0);
-        Util.arrayCopyNonAtomic(dataArray, (short) 0, apdubuf, ISO7816.OFFSET_CDATA, tlen);
-        apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, tlen);
+        tlen = bigX.getW(dataArray,(short) 0); //measuring length of T again and saving it to "memory"
+        Util.arrayCopyNonAtomic(dataArray, (short) 0, apdubuf, ISO7816.OFFSET_CDATA, tlen); // copying to APDU
+        apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, tlen); //sending T = wM + X
     }
 }
