@@ -85,7 +85,7 @@ public class MathTest extends javacard.framework.Applet {
         short bigXlen = pubkey.getW(dataArray, (short) 0); // getting X length and saving it to "memory" as raw bytes
         bigX.setW(dataArray, (short) 0, bigXlen); // making X point
         bigT.add(bigX); //T = wM + X
-        tlen = bigX.getW(dataArray,(short) 0); //measuring length of T again and saving it to "memory"
+        tlen = bigT.getW(dataArray,(short) 0); //measuring length of T again and saving it to "memory"
         Util.arrayCopyNonAtomic(dataArray, (short) 0, apdubuf, ISO7816.OFFSET_CDATA, tlen); // copying to APDU
         apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, tlen); //sending T = wM + X
     }
