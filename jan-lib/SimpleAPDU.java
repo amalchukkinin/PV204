@@ -18,7 +18,7 @@ public class SimpleAPDU {
     private static String APPLET_AID = "482871d58ab7465e5e05";
     private static byte APPLET_AID_BYTE[] = Util.hexStringToByteArray(APPLET_AID);
 
-    private static final String STR_APDU_GETRANDOM = "B054100000";
+    private static final String STR_APDU_GETRANDOM = "000000004104CDA18B08DA11E29A78C7C120B5428738A96D63FA11BF534B03D387113305FFD9D4C543828A0434200920FA123F64CD12223CF5C92AE3A94D96E1022F7DBDC7DC";
 
     /**
      * Main entry point.
@@ -62,7 +62,6 @@ public class SimpleAPDU {
         final ResponseAPDU response = cardMngr.transmit(new CommandAPDU(Util.hexStringToByteArray(STR_APDU_GETRANDOM)));
         byte[] data = response.getData();
         
-        final ResponseAPDU response2 = cardMngr.transmit(new CommandAPDU(0xB0, 0x54, 0x00, 0x00, data)); // Use other constructor for CommandAPDU
         
         System.out.println(response);
     }      

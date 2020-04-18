@@ -23,6 +23,8 @@ public class MathTest extends javacard.framework.Applet {
     ECCurve         curve = null;
     ECPoint         bigX = null;
     ECPoint         bigT = null;
+    ECPoint         bigS = null;
+    ECPoint         bobShared = null;
     KeyPair         kp = null;
     ECPrivateKey    privkey = null;
     ECPublicKey     pubkey = null;
@@ -42,6 +44,8 @@ public class MathTest extends javacard.framework.Applet {
         curve = new ECCurve(false, SecP256r1.p, SecP256r1.a, SecP256r1.b, SecP256r1.G, SecP256r1.r);
         bigX = new ECPoint(curve, ecc.ech);
         bigT = new ECPoint(curve, ecc.ech);
+        bigS = new ECPoint(curve, ecc.ech);
+        bobShared = new ECPoint(curve, ecc.ech);
         kp = new KeyPair(KeyPair.ALG_EC_FP, (short) 256);
         kp.genKeyPair();
         privkey = (ECPrivateKey) kp.getPrivate();
@@ -64,9 +68,17 @@ public class MathTest extends javacard.framework.Applet {
     
     // NOTE: very simple EC usage example - no cla/ins, no communication with host...    
     public void process(APDU apdu) {
-        byte[] apdubuf = apdu.getBuffer();
+        byte[] apdubuf = apdu.getBuffer(); // presuming we receive raw S
         short dataLen = apdu.setIncomingAndReceive();
         if (selectingApplet()) { return; } // Someone is going to use our applet
+        bigS.setW(apdubuf, (short) 0, dataLen); //S = S
+        bobShared.setW(N_COMPRESSED, (short) 0, (short) N_COMPRESSED.length); //Shared = N
+        short bobSharedLen = bobShared.multiplication_x(userpin, dataArray, (short) 0); // wN stored into memory
+        bobShared.setW(dataArray, (short) 0, bobSharedLen); // Shared = wN
+        bobShared.negate(); // Shared = -wN
+        bobShared.add(bigS); // Shared = S - wN
+        bobSharedLen = bobShared.multiplication_x(smallx, dataArray, (short) 0); // Putting x*(S-wN) into memory
+        bobShared.setW(dataArray, (short) 0, bobSharedLen); // Shared = x*(S-wN) = x*y*G
         bigT.setW(M_COMPRESSED, (short) 0, (short) M_COMPRESSED.length); //T = M
         short tlen = bigT.multiplication_x(userpin, dataArray, (short)0);//userpin is Bignat Scalar, wM stored in "memory".
         bigT.setW(dataArray, (short) 0, tlen); // T = wM
