@@ -1,50 +1,43 @@
 package applets;
 
-import java.security.NoSuchAlgorithmException;
 import javacard.framework.*;
 import javacard.security.*;
 import javacard.framework.APDU;
 import javacard.framework.ISO7816;
 import javacard.framework.ISOException;
 import javacard.framework.Util;
-import javacard.security.KeyPair;
-import opencrypto.jcmathlib.*;
+import org.bouncycastle.asn1.x9.ECNamedCurveTable;
+import org.bouncycastle.asn1.x9.X9ECParameters;
+import org.bouncycastle.crypto.AsymmetricCipherKeyPair;
+import org.bouncycastle.crypto.generators.ECKeyPairGenerator;
+import org.bouncycastle.crypto.params.ECDomainParameters;
+import org.bouncycastle.crypto.params.ECKeyGenerationParameters;
+import org.bouncycastle.crypto.params.ECPrivateKeyParameters;
+import org.bouncycastle.crypto.params.ECPublicKeyParameters;
+import org.bouncycastle.math.ec.ECPoint;
+import org.bouncycastle.util.encoders.Hex;
 
+import java.math.BigInteger;
+import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
+import javacardx.crypto.Cipher;
 
-import javacard.security.ECPrivateKey;
-import javacard.security.ECPublicKey;
 
 ;
 
 public class SimpleApplet extends javacard.framework.Applet {
 
- 
-   
-    private byte dataArray1[] = null;
-    private byte dataArray2[] = null;
-
-    ECConfig        ecc = null;
-    ECCurve         curve = null;
-    ECPoint         bigX = null;
-    ECPoint         bigT = null;
-    ECPoint         bigS = null;
-    ECPoint         bobShared = null;
-    KeyPair         kp = null;
-    ECPrivateKey    privkey = null;
-    ECPublicKey     pubkey = null;
-    Bignat          smallx = null;
-    Bignat          userpin = null;
+    private byte secret[] =null;
     
     final static byte[] PIN_TEST = {(byte) 0x31, (byte) 0x32, (byte) 0x33, (byte) 0x34};
-    final static byte[] N_COMPRESSED = {(byte) 0x03, (byte) 0xD8, (byte) 0xBB, (byte) 0xD6, (byte) 0xC6, (byte) 0x39, (byte) 0xC6, (byte) 0x29, (byte) 0x37, (byte) 0xB0, (byte) 0x4D, (byte) 0x99, (byte) 0x7F, (byte) 0x38, (byte) 0xC3, (byte) 0x77, (byte) 0x07, (byte) 0x19, (byte) 0xC6, (byte) 0x29, (byte) 0xD7, (byte) 0x01, (byte) 0x4D, (byte) 0x49, (byte) 0xA2, (byte) 0x4B, (byte) 0x4F, (byte) 0x98, (byte) 0xBA, (byte) 0xA1, (byte) 0x29, (byte) 0x2B, (byte) 0x49};
-    final static byte[] M_COMPRESSED = {(byte) 0x02, (byte) 0x88, (byte) 0x6E, (byte) 0x2F, (byte) 0x97, (byte) 0xAC, (byte) 0xE4, (byte) 0x6E, (byte) 0x55, (byte) 0xBA, (byte) 0x9D, (byte) 0xD7, (byte) 0x24, (byte) 0x25, (byte) 0x79, (byte) 0xF2, (byte) 0x99, (byte) 0x3B, (byte) 0x64, (byte) 0xE1, (byte) 0x6E, (byte) 0xF3, (byte) 0xDC, (byte) 0xAB, (byte) 0x95, (byte) 0xAF, (byte) 0xD4, (byte) 0x97, (byte) 0x33, (byte) 0x3D, (byte) 0x8F, (byte) 0xA1, (byte) 0x2F};
-
-   
+    
     final static byte CLA_SIMPLEAPPLET = (byte) 0xB0;
 
     // INSTRUCTIONS
     
-    final static byte INS_RANDOM = (byte) 0x54;
+    final static byte INS_ECC = (byte) 0x54;
+    final static byte INS_DEC = (byte) 0x55;
+
     
     final static short ARRAY_LENGTH = (short) 0xff;
     final static byte AES_BLOCK_LENGTH = (short) 0x16;
@@ -67,7 +60,13 @@ public class SimpleApplet extends javacard.framework.Applet {
     final static short SW_TransactionException_prefix = (short) 0xf400;
     final static short SW_CardRuntimeException_prefix = (short) 0xf500;
 
- 
+    private AESKey m_aesKey = null;
+    private MessageDigest m_hash = null;
+
+    private Cipher m_encryptCipherCBC = null;
+    private Cipher m_decryptCipherCBC = null;
+    
+    private RandomData m_secureRandom = null;
     /**
      * SimpleApplet default constructor Only this class's install method should
      * create the applet object.
@@ -97,29 +96,6 @@ public class SimpleApplet extends javacard.framework.Applet {
             // go to proprietary data
             dataOffset++;
 
-        dataArray1 = new byte[100];
-        Util.arrayFillNonAtomic(dataArray1, (short) 0, (short) 100, (byte) 0);
-        dataArray2 = new byte[100];
-        Util.arrayFillNonAtomic(dataArray2, (short) 0, (short) 100, (byte) 0);
-        // Pre-allocate all helper structures
-        ecc = new ECConfig((short) 256); 
-        // Pre-allocate standard SecP256r1 curve and two EC points on this curve
-        curve = new ECCurve(false, SecP256r1.p, SecP256r1.a, SecP256r1.b, SecP256r1.G, SecP256r1.r);
-        bigX = new ECPoint(curve, ecc.ech);
-        bigT = new ECPoint(curve, ecc.ech);
-        bigS = new ECPoint(curve, ecc.ech);
-        bobShared = new ECPoint(curve, ecc.ech);
-        kp = new KeyPair(KeyPair.ALG_EC_FP, (short) 256);
-        kp.genKeyPair();
-        privkey = (ECPrivateKey) kp.getPrivate();
-        pubkey = (ECPublicKey) kp.getPublic();
-        short smallxlen = privkey.getS(dataArray1, (short) 0);
-        byte[] smallxdata = new byte[smallxlen];
-        privkey.getS(smallxdata, (short) 0);
-        smallx = new Bignat(smallxdata, ecc.bnh);
-        userpin = new Bignat(PIN_TEST,ecc.bnh);
-        
-        
         // update flag
             isOP2 = true;
 
@@ -169,70 +145,118 @@ public class SimpleApplet extends javacard.framework.Applet {
 
         byte[] apdubuf = apdu.getBuffer();
 
-        //TODO
-        //BOB TO ALICE- xG + wM;
-        
         //CALCULATES SECRET= x(S-wN)
         short dataLen = apdu.getIncomingLength(); 
 
         byte test[]=new byte[dataLen];
 
         System.arraycopy(apdubuf,ISO7816.OFFSET_CDATA,test,(short)0,dataLen);
-        System.out.println("\nPRINTING THE S CAME FROM APDU/PC:");  
-        
-        for (byte b : test) {
-            String st = String.format("%02X", b);
-            System.out.print(st);
-        }
-        
-        
   
-        bigS.setW(apdubuf,ISO7816.OFFSET_CDATA, dataLen); //S = S
-        bobShared.setW(N_COMPRESSED, (short) 0, (short) N_COMPRESSED.length); //Shared = N
-        short bobSharedLen = bobShared.multiplication_x(userpin, dataArray1, (short) 0); // wN stored into memory
-        bobShared.setW(dataArray1, (short) 0, bobSharedLen); // Shared = wN
-        bobShared.negate(); // Shared = -wN
-        bobShared.add(bigS); // Shared = S - wN
-        bobSharedLen = bobShared.multiplication_x(smallx, dataArray1, (short) 0); // Putting x*(S-wN) into memory
-        bobShared.setW(dataArray1, (short) 0, bobSharedLen); // Shared = x*(S-wN) = x*y*G
+        X9ECParameters curve = ECNamedCurveTable.getByName("P-256");
+        ECDomainParameters ecparams = new ECDomainParameters(curve.getCurve(), curve.getG(), curve.getN(), curve.getH(), curve.getSeed());
+        final SecureRandom random = new SecureRandom();
+        final ECKeyPairGenerator gen = new ECKeyPairGenerator();
+        gen.init(new ECKeyGenerationParameters(ecparams, random));
+        AsymmetricCipherKeyPair alicePair = gen.generateKeyPair();
+        ECPublicKeyParameters alicepublic = (ECPublicKeyParameters) alicePair.getPublic();
+        ECPrivateKeyParameters aliceprivate = (ECPrivateKeyParameters) alicePair.getPrivate();
+        ECPoint bigY = alicepublic.getQ();
+        BigInteger smally = aliceprivate.getD();
+        String s = new String(PIN_TEST);
+        long num = Long.parseLong(s);
+        BigInteger PIN = BigInteger.valueOf(num);
+
+        ECPoint bigN = ecparams.getCurve().decodePoint(Hex.decode("03d8bbd6c639c62937b04d997f38c3770719c629d7014d49a24b4f98baa1292b49"));
+        ECPoint bigM = ecparams.getCurve().decodePoint(Hex.decode("02886e2f97ace46e55ba9dd7242579f2993b64e16ef3dcab95afd497333d8fa12f"));
+       
+        ECPoint bigT = ecparams.getCurve().decodePoint(test);
+
+        ECPoint shared2 = bigT.subtract(bigM.multiply(PIN)).multiply(smally);
         
+        secret = shared2.getEncoded(true);
+        
+        /*
         System.out.println("\nPRINTING THE SHARED SECRET IN CARD:");  
         
-        for (byte b : dataArray1) {
+        for (byte b : secret) {
             String st = String.format("%02X", b);
             System.out.print(st);
         }
         System.out.println("\n");
 
+        */
+
+        //TODO
+        //Y + wN;
         
-
-
-        //CALCULATION OF T = wM + X
-        bigT.setW(M_COMPRESSED, (short) 0, (short) M_COMPRESSED.length); //T = M
-
-        short tlen = bigT.multiplication_x(userpin, dataArray2, (short)0);//userpin is Bignat Scalar, wM stored in "memory".
-        bigT.setW(dataArray2, (short) 0, tlen); // T = wM
-
-        short bigXlen = pubkey.getW(dataArray2, (short) 0); // getting X length and saving it to "memory" as raw bytes
-        bigX.setW(dataArray2, (short) 0, bigXlen); // making X point
-        bigT.add(bigX); //T = wM + X
-        tlen = bigT.getW(dataArray2,(short) 0); //measuring length of T again and saving it to "memory"
-        Util.arrayCopyNonAtomic(dataArray2, (short) 0, apdubuf, ISO7816.OFFSET_CDATA, tlen); // copying to APDU
-        System.out.println("\nPRINTING THE T IN CARD:");  
-        System.out.println("THE tlen is "+tlen);
-        byte test1[] =new byte[tlen];
-        System.arraycopy(apdubuf, ISO7816.OFFSET_CDATA, test1,(short)0,tlen);
-        for (byte b : test1) {
-            String st = String.format("%02X", b);
-            System.out.print(st);
-        }
-        System.out.println("\n");
-        apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, tlen); //sending T = wM + X
+        ECPoint bigS = bigN.multiply(PIN).add(bigY);
+        byte[] tosend_S = bigS.getEncoded(true);
+         
+        byte test1[] =new byte[tosend_S.length];
+        
+        System.arraycopy(tosend_S,(short)0,apdubuf,ISO7816.OFFSET_CDATA,tosend_S.length);
+       
+        apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, (short)tosend_S.length); //sending S
         
         
     }
     
+    private void symmetric_enc(APDU apdu){
+        byte[] apdubuf = apdu.getBuffer();
+        
+        short dataLen = apdu.getIncomingLength(); 
+
+        byte cipher[]=new byte[dataLen];
+
+        System.arraycopy(apdubuf,ISO7816.OFFSET_CDATA,cipher,(short)0,dataLen);
+      
+        
+        //SET THE MD5(SHARED KEY) AS THE KEY FOR SYMMETRIC ENCRYPTION- AES
+        m_hash = MessageDigest.getInstance(MessageDigest.ALG_MD5, false);
+        byte[] digest=new byte[32];
+
+        m_hash.doFinal(secret, (short)0, (short)secret.length, digest, (short) 0);
+
+        m_aesKey = (AESKey) KeyBuilder.buildKey(KeyBuilder.TYPE_AES, KeyBuilder.LENGTH_AES_256, false);
+        m_aesKey.setKey(digest, (short)0);
+        
+        //GET INSTANCE-DECRYPTION
+        m_decryptCipherCBC = Cipher.getInstance(Cipher.ALG_AES_BLOCK_128_CBC_NOPAD, false);
+        m_decryptCipherCBC.init(m_aesKey, Cipher.MODE_DECRYPT);
+        
+        //DECRYPTION
+        byte [] dec_random= new byte[16];
+        m_decryptCipherCBC.doFinal(cipher, (short) 0, (short) cipher.length, dec_random,(short)0);
+      
+        //REVERSE THE PLAINTEXT
+        int i = 0;
+        int j = dec_random.length - 1;
+        byte tmp;
+        while (j > i) {
+          tmp = dec_random[j];
+          dec_random[j] = dec_random[i];
+          dec_random[i] = tmp;
+          j--;
+          i++;
+        }
     
+       //REVERSE ENCRYPTION
+       m_encryptCipherCBC = Cipher.getInstance(Cipher.ALG_AES_BLOCK_128_CBC_NOPAD, false);
+       m_encryptCipherCBC.init(m_aesKey, Cipher.MODE_ENCRYPT);
+        
+       //ENCRYPTION
+        byte [] reverse_enc= new byte[16];
+        m_encryptCipherCBC.doFinal(dec_random, (short) 0, (short)dec_random.length, reverse_enc,(short)0);
+     
+        //SEND TO PC
+        System.arraycopy(reverse_enc,(short)0,apdubuf,ISO7816.OFFSET_CDATA,reverse_enc.length);
+        apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, (short)reverse_enc.length); 
+
+
+
+        
+    }
+            
     
     
     
@@ -260,10 +284,12 @@ public class SimpleApplet extends javacard.framework.Applet {
                 
                 switch (apduBuffer[ISO7816.OFFSET_INS]) {
                     
-                    case INS_RANDOM:
+                    case INS_ECC:
                         GenEccKeyPair(apdu,len);
                         break;
-                    
+                    case INS_DEC:
+                        symmetric_enc(apdu);
+                        break;
                     default:
                         // The INS code is not supported by the dispatcher
                         ISOException.throwIt(ISO7816.SW_INS_NOT_SUPPORTED);
