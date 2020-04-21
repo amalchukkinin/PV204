@@ -5,50 +5,55 @@ import applets.SimpleApplet;
 import cardTools.RunConfig;
 import java.util.Scanner;
 import javacard.framework.OwnerPIN;
-import javacard.security.ECPrivateKey;
-import javacard.security.ECPublicKey;
-import javacard.security.KeyPair;
 
-import opencrypto.jcmathlib.Bignat;
-import opencrypto.jcmathlib.ECConfig;
-import opencrypto.jcmathlib.ECCurve;
-import opencrypto.jcmathlib.ECPoint;
-import opencrypto.jcmathlib.SecP256r1;
+
+import org.bouncycastle.asn1.x9.ECNamedCurveTable;
+import org.bouncycastle.asn1.x9.X9ECParameters;
+import org.bouncycastle.crypto.AsymmetricCipherKeyPair;
+import org.bouncycastle.crypto.generators.ECKeyPairGenerator;
+import org.bouncycastle.crypto.params.ECDomainParameters;
+import org.bouncycastle.crypto.params.ECKeyGenerationParameters;
+import org.bouncycastle.crypto.params.ECPrivateKeyParameters;
+import org.bouncycastle.crypto.params.ECPublicKeyParameters;
+import org.bouncycastle.math.ec.ECPoint;
+import org.bouncycastle.util.encoders.Hex;
+
+import java.math.BigInteger;
+import java.security.SecureRandom;
+import static javacard.framework.Util.arrayCompare;
+import javacard.security.AESKey;
+import javacard.security.KeyBuilder;
+import javacard.security.MessageDigest;
+import javacard.security.RandomData;
+import javacardx.crypto.Cipher;
 
 
 /**
  * Test class.
  * Note: If simulator cannot be started try adding "-noverify" JVM parameter
  *
- * @author Petr Svenda (petrs), Dusan Klinec (ph4r05)
+ * @author TEAM
  */
 public class SimpleAPDU {
     private static byte[] APPLET_AID = {(byte) 0x73, (byte) 0x69, (byte) 0x6D, (byte) 0x70, (byte) 0x6C,
         (byte) 0x65, (byte) 0x61, (byte) 0x70, (byte) 0x70, (byte) 0x6C, (byte) 0x65, (byte) 0x74};;
     static CardMngr cardManager = new CardMngr();
     //private static byte APPLET_AID_BYTE[] = Util.hexStringToByteArray(APPLET_AID);
-    
-    private OwnerPIN m_pin = null;
+   
+     private OwnerPIN m_pin = null;
     
     private static final String STR_APDU_GETRANDOM = "B054010000";
-    
-    final static byte[] N_COMPRESSED = {(byte) 0x03, (byte) 0xD8, (byte) 0xBB, (byte) 0xD6, (byte) 0xC6, (byte) 0x39, (byte) 0xC6, (byte) 0x29, (byte) 0x37, (byte) 0xB0, (byte) 0x4D, (byte) 0x99, (byte) 0x7F, (byte) 0x38, (byte) 0xC3, (byte) 0x77, (byte) 0x07, (byte) 0x19, (byte) 0xC6, (byte) 0x29, (byte) 0xD7, (byte) 0x01, (byte) 0x4D, (byte) 0x49, (byte) 0xA2, (byte) 0x4B, (byte) 0x4F, (byte) 0x98, (byte) 0xBA, (byte) 0xA1, (byte) 0x29, (byte) 0x2B, (byte) 0x49};
-    final static byte[] M_COMPRESSED = {(byte) 0x02, (byte) 0x88, (byte) 0x6E, (byte) 0x2F, (byte) 0x97, (byte) 0xAC, (byte) 0xE4, (byte) 0x6E, (byte) 0x55, (byte) 0xBA, (byte) 0x9D, (byte) 0xD7, (byte) 0x24, (byte) 0x25, (byte) 0x79, (byte) 0xF2, (byte) 0x99, (byte) 0x3B, (byte) 0x64, (byte) 0xE1, (byte) 0x6E, (byte) 0xF3, (byte) 0xDC, (byte) 0xAB, (byte) 0x95, (byte) 0xAF, (byte) 0xD4, (byte) 0x97, (byte) 0x33, (byte) 0x3D, (byte) 0x8F, (byte) 0xA1, (byte) 0x2F};
     private byte dataArray1[] = null;
     private byte dataArray2[] = null;
-    ECConfig        ecc = null;
-    ECCurve         curve = null;
-    ECPoint         bigX = null;
-    ECPoint         bigY = null;
-    ECPoint         bigT = null;
-    ECPoint         bigS = null;
-    ECPoint         bobShared = null;
-    KeyPair         kp = null;
-    ECPrivateKey    privkey = null;
-    ECPublicKey     pubkey = null;
-    Bignat          smally = null;
-    Bignat          userpin = null;
     
+    private AESKey m_aesKey = null;
+    private MessageDigest m_hash = null;
+
+    private Cipher m_encryptCipherCBC = null;
+    private Cipher m_decryptCipherCBC = null;
+    
+    private RandomData m_secureRandom = null;
+
 
     /**
      * Main entry point.
@@ -56,7 +61,7 @@ public class SimpleAPDU {
      * @param args
      */
     public static void main(String[] args) {
-        
+       
     
         try {
             SimpleAPDU main = new SimpleAPDU();
@@ -66,14 +71,15 @@ public class SimpleAPDU {
             //cardManager.prepareLocalSimulatorApplet(APPLET_AID, installData, SimpleApplet.class);
            
             cardManager.prepareLocalSimulatorApplet(APPLET_AID, installData, SimpleApplet.class);
-            main.Shared_secret_cal();
+            byte x=3;
+            main.Shared_secret_cal(x);
             
         } catch (Exception ex) {
             System.out.println("Exception : " + ex);
         }
     }
 
-    public void Shared_secret_cal() throws Exception {
+    public void Shared_secret_cal(byte x) throws Exception {
         
         
         // Get default configuration for subsequent connection to card (personalized later)
@@ -81,17 +87,20 @@ public class SimpleAPDU {
           
         //Take pin fro user in PC/Host
         
-            System.out.println("Welcome User \nPlease enter the PIN");
+            System.out.println("WELCOME USER !!!!\nPLEASE ENTER YOUR PIN");
             Scanner scanner = new Scanner(System.in);
             String inputString = scanner.nextLine();
             byte[]user_pin= inputString.getBytes();
-            m_pin = new OwnerPIN((byte) 5, (byte) 4); // 5 tries, 4 digits in pin
+            
+            if(x==0){
+            System.out.println("\nYOU HAVE ENTERD THE MAX LIMIT OF PIN TRY!!");
+
+            }
+            m_pin = new OwnerPIN(x, (byte) 4); // 3 tries, 4 digits in pin
             m_pin.update(user_pin, (byte) 0, (byte) 4);
+
             //System.out.println("\nTHE PIN ENTERED BY USER AND STORED IN HOST/PC/ALICE IS");
-       
-            
-            
-        
+  
        
         // A) If running on physical card
         // runCfg.setTestCardType(RunConfig.CARD_TYPE.PHYSICAL); // Use real card
@@ -108,101 +117,153 @@ public class SimpleAPDU {
          dataArray2 = new byte[100];
         javacard.framework.Util.arrayFillNonAtomic(dataArray2, (short) 0, (short) 100, (byte) 0);
         // Pre-allocate all helper structures
-        ecc = new ECConfig((short) 256); 
-        // Pre-allocate standard SecP256r1 curve and two EC points on this curve
-        curve = new ECCurve(false, SecP256r1.p, SecP256r1.a, SecP256r1.b, SecP256r1.G, SecP256r1.r);
-        bigX = new ECPoint(curve, ecc.ech);
-        bigY = new ECPoint(curve, ecc.ech);
-        bigT = new ECPoint(curve, ecc.ech);
-        bigS = new ECPoint(curve, ecc.ech);
-        bobShared = new ECPoint(curve, ecc.ech);
-        kp = new KeyPair(KeyPair.ALG_EC_FP, (short) 256);
-        kp.genKeyPair();
-        privkey = (ECPrivateKey) kp.getPrivate();
-        pubkey = (ECPublicKey) kp.getPublic();
         
-        
-        short smallylen = privkey.getS(dataArray1, (short) 0);
+        //ECDH 
        
-        byte[] smallydata = new byte[smallylen];
-        privkey.getS(smallydata, (short) 0);
-        smally = new Bignat(smallydata, ecc.bnh);
-        userpin = new Bignat(user_pin,ecc.bnh);
-       
-         //TODO
-        // ALICE TO BOB- S= yG + wN; 
-         //CALCULATES SECRET= y(T-wM)
+        X9ECParameters curve = ECNamedCurveTable.getByName("P-256");
+        ECDomainParameters ecparams = new ECDomainParameters(curve.getCurve(), curve.getG(), curve.getN(), curve.getH(), curve.getSeed());
+        final SecureRandom random = new SecureRandom();
+        final ECKeyPairGenerator gen = new ECKeyPairGenerator();
+        gen.init(new ECKeyGenerationParameters(ecparams, random));
+        AsymmetricCipherKeyPair bobPair = gen.generateKeyPair();
+        ECPublicKeyParameters bobpublic = (ECPublicKeyParameters) bobPair.getPublic();
+        ECPrivateKeyParameters bobprivate = (ECPrivateKeyParameters) bobPair.getPrivate();
+        ECPoint bigX = bobpublic.getQ();
+        BigInteger smallx = bobprivate.getD();
+        String s = new String(user_pin);
+        long num = Long.parseLong(s);
+        BigInteger PIN = BigInteger.valueOf(num);
+        ECPoint bigN = ecparams.getCurve().decodePoint(Hex.decode("03d8bbd6c639c62937b04d997f38c3770719c629d7014d49a24b4f98baa1292b49"));
+        ECPoint bigM = ecparams.getCurve().decodePoint(Hex.decode("02886e2f97ace46e55ba9dd7242579f2993b64e16ef3dcab95afd497333d8fa12f"));
+        ECPoint bigT = bigM.multiply(PIN).add(bigX);
+      
 
+         //TODO T = wM + X
+       
+         byte[] tosend_T = bigT.getEncoded(true);
+        
         //transmit the S value; S=wN+Y
-        bigS.setW(N_COMPRESSED, (short) 0, (short) N_COMPRESSED.length); //S = N
-        short slen = bigS.multiplication_x(userpin, dataArray1, (short)0);//userpin is Bignat Scalar, wN stored in "memory".
-        bigS.setW(dataArray1, (short) 0, slen); // S = wN
-        short bigYlen = pubkey.getW(dataArray1, (short) 0); // getting Y length and saving it to "memory" as raw bytes
-        bigY.setW(dataArray1, (short) 0, bigYlen); // making Y point
-        
-  
-        bigS.add(bigY); //S = wN + Y
-        slen = bigS.getW(dataArray1,(short) 0); //m
-        System.out.println("\nslen is "+slen);
-        
      
-        byte apdu_withS[] = new byte[CardMngr.HEADER_LENGTH + slen];
+        byte apdu_withS[] = new byte[CardMngr.HEADER_LENGTH + tosend_T.length];
         apdu_withS[CardMngr.OFFSET_CLA] = (byte) 0xB0;
         apdu_withS[CardMngr.OFFSET_INS] = (byte) 0x54;// 
         apdu_withS[CardMngr.OFFSET_P1] = (byte) 0x01;
         apdu_withS[CardMngr.OFFSET_P2] = (byte) 0x00;
-        apdu_withS[CardMngr.OFFSET_LC] = (byte) slen;
+        apdu_withS[CardMngr.OFFSET_LC] = (byte) tosend_T.length;
         
-        if(slen!=0){
-        System.arraycopy(dataArray1, 0, apdu_withS, CardMngr.OFFSET_DATA, slen);
+        if(tosend_T.length!=0){
+        System.arraycopy(tosend_T, 0, apdu_withS, CardMngr.OFFSET_DATA, tosend_T.length);
         }
         
         // Transmit single APDU
-        
-        byte test[] =new byte[slen];
-        System.arraycopy(apdu_withS, CardMngr.OFFSET_DATA, test,(short)0, slen);
-
-        
-        System.out.println("\nPRINTING THE S TO SENT:");  
-        
-        for (byte b : test) {
-            String st = String.format("%02X", b);
-            System.out.print(st);
-        }
-        System.out.println("\n");
-
-        
+        //TRANSMIT T TO CARD
         byte[] responsefromBOB = cardManager.sendAPDUSimulator(apdu_withS);
+        
+      
+        //RECIEVE S FROM CARD
+        //CALCULATES SECRET= x(S-wN)
         int len =responsefromBOB.length-2;
-        byte[] Tfromcard =new byte[(responsefromBOB.length-2)];
-        javacard.framework.Util.arrayCopyNonAtomic(responsefromBOB, (short) 0, Tfromcard,(short)0, (short)len); // copying to APDU
+        byte[] Sfromcard =new byte[len];
 
-        
-        System.out.println("\nPRINTING THE T CAME FROM CARD:");  
-        
-        for (byte b : Tfromcard) {
-            String st = String.format("%02X", b);
-            System.out.print(st);
-        }
-        
+        System.arraycopy(responsefromBOB, (short) 0, Sfromcard,(short)0, (short)len); // copying to APDU
 
-        bigT.setW(Tfromcard,(short)0, (short)Tfromcard.length); //T = T
-        bobShared.setW(M_COMPRESSED, (short) 0, (short) M_COMPRESSED.length); //Shared = M
-        short bobSharedLen = bobShared.multiplication_x(userpin, dataArray2, (short) 0); // wM stored into memory
-        bobShared.setW(dataArray2, (short) 0, bobSharedLen); // Shared = wM
-        bobShared.negate(); // Shared = -wM
-        bobShared.add(bigT); // Shared = T - wN
-        bobSharedLen = bobShared.multiplication_x(smally, dataArray2, (short) 0); // Putting y*(T-wM) into memory
-        bobShared.setW(dataArray2, (short) 0, bobSharedLen); // Shared = y*(T-wM) = x*y*G
+        ECPoint bigS = ecparams.getCurve().decodePoint(Sfromcard);
+        ECPoint shared1 = bigS.subtract(bigN.multiply(PIN)).multiply(smallx);
+        byte[] secret = shared1.getEncoded(true);
         
-        
+        /*
         System.out.println("\nPRINTING THE SHARED SECRET IN PC :");  
         
-        for (byte b : dataArray2) {
+        for (byte b : secret) {
             String st = String.format("%02X", b);
             System.out.print(st);
         }
+        */
         
+        
+        
+        //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        //SET THE MD5(SHARED KEY) AS THE KEY FOR SYMMETRIC ENCRYPTION- AES
+        m_hash = MessageDigest.getInstance(MessageDigest.ALG_MD5, false);
+        byte[] digest=new byte[32];
+
+        m_hash.doFinal(secret, (short)0, (short)secret.length, digest, (short) 0);
+
+        m_aesKey = (AESKey) KeyBuilder.buildKey(KeyBuilder.TYPE_AES, KeyBuilder.LENGTH_AES_256, false);
+        m_aesKey.setKey(digest, (short)0);
+        //Generate random seed
+        m_secureRandom = RandomData.getInstance(RandomData.ALG_SECURE_RANDOM);
+        byte [] random_number= new byte[16];
+        m_secureRandom.generateData(random_number, (short) 0, (short)random_number.length);
+        //GET INSTANCE
+        m_encryptCipherCBC = Cipher.getInstance(Cipher.ALG_AES_BLOCK_128_CBC_NOPAD, false);
+        m_encryptCipherCBC.init(m_aesKey, Cipher.MODE_ENCRYPT);
+        
+        //ENCRYPTION
+        byte [] enc_random= new byte[16];
+       
+        m_encryptCipherCBC.doFinal(random_number, (short) 0, (short) random_number.length, enc_random,(short)0);
+        
+        //TRANSMIT THE CIPHER
+       
+        byte apdu_cipher[] = new byte[CardMngr.HEADER_LENGTH + enc_random.length];
+        apdu_cipher[CardMngr.OFFSET_CLA] = (byte) 0xB0;
+        apdu_cipher[CardMngr.OFFSET_INS] = (byte) 0x55;// 
+        apdu_cipher[CardMngr.OFFSET_P1] = (byte) 0x01;
+        apdu_cipher[CardMngr.OFFSET_P2] = (byte) 0x00;
+        apdu_cipher[CardMngr.OFFSET_LC] = (byte) enc_random.length;
+        
+        if(enc_random.length!=0){
+        System.arraycopy(enc_random, 0, apdu_cipher, CardMngr.OFFSET_DATA, enc_random.length);
+        }
+        
+        byte[] responseforcipher = cardManager.sendAPDUSimulator(apdu_cipher);
+      
+        //VERIFYING THE CIPHER- MUTUAL AUTHENTICATION
+        
+        int l =responseforcipher.length-2;
+        byte[] reversecipher =new byte[l];
+        
+        
+        System.arraycopy(responseforcipher, (short) 0, reversecipher,(short)0, (short)l);
+      
+        //DECRYPTION AT PC
+        m_decryptCipherCBC = Cipher.getInstance(Cipher.ALG_AES_BLOCK_128_CBC_NOPAD, false);
+        m_decryptCipherCBC.init(m_aesKey, Cipher.MODE_DECRYPT);
+        
+        //DECRYPTION
+        byte [] dec_reverse= new byte[16];
+        m_decryptCipherCBC.doFinal(reversecipher, (short) 0, (short)reversecipher.length, dec_reverse,(short)0);
+     
+        //REVERSE THE PLAINTEXT
+        int i = 0;
+        int j = dec_reverse.length - 1;
+        byte tmp;
+        while (j > i) {
+          tmp = dec_reverse[j];
+          dec_reverse[j] = dec_reverse[i];
+          dec_reverse[i] = tmp;
+          j--;
+          i++;
+        }
+        
+        if(arrayCompare(dec_reverse, (short)0, random_number, (short)0,(short)dec_reverse.length)==0){
+            
+             System.out.println("\nSUCCESS ! WELCOME USER");
+        }
+        
+        else{
+            if(m_pin.getTriesRemaining()!=0)
+            {
+                System.out.println("\nINCORRECT PIN! PLEASE TRY AGAIN");
+                System.out.println("\nYOU HAVE "+(m_pin.getTriesRemaining())+" ATTEMPTS LEFT");
+                
+                Shared_secret_cal((byte)(m_pin.getTriesRemaining()-1));
+            }
+            
+        }
+     
+
         
     }
 
