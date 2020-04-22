@@ -64,7 +64,6 @@ public class SimpleAPDU {
             //ask user for pin
              // Prepare simulated card 
             byte[] installData = {(byte) 0x04, (byte)0xD2}; // no special install data passed now - can be used to pass initial keys etc.
-            //cardManager.prepareLocalSimulatorApplet(APPLET_AID, installData, SimpleApplet.class);
            
             cardManager.prepareLocalSimulatorApplet(APPLET_AID, installData, SimpleApplet.class);
             main.Shared_secret_cal();
@@ -72,7 +71,7 @@ public class SimpleAPDU {
              byte[] tosend = new byte[32];
              m_encryptCipherCBC.doFinal(toenc, (short) 0, (short) toenc.length, tosend, (short) 0);
         
-        //transmit the S value; S=wN+Y
+        //TRANSMIT APDU- FOR FRESHNESS
      
         byte apdu_withdata[] = new byte[CardMngr.HEADER_LENGTH + tosend.length];
         apdu_withdata[CardMngr.OFFSET_CLA] = (byte) 0xB0;
@@ -85,7 +84,7 @@ public class SimpleAPDU {
         System.arraycopy(tosend, 0, apdu_withdata, CardMngr.OFFSET_DATA, tosend.length);
         }
         
-        // Transmit single APDU
+        // TRANSMIT SINGLE APDU
         //TRANSMIT T TO CARD
         byte[] responsefromBOB = cardManager.sendAPDUSimulator(apdu_withdata);
             
@@ -105,7 +104,7 @@ public class SimpleAPDU {
         // Get default configuration for subsequent connection to card (personalized later)
         final RunConfig runCfg = RunConfig.getDefaultConfig();
           
-        //Take pin fro user in PC/Host
+        //ASK THE USER FOR PIN - IN PC
         
             System.out.println("WELCOME USER !!!!\nPLEASE ENTER YOUR PIN");
             Scanner scanner = new Scanner(System.in);
@@ -115,7 +114,7 @@ public class SimpleAPDU {
         runCfg.setAppletToSimulate(SimpleApplet.class); // main class of applet to simulate
         runCfg.setTestCardType(RunConfig.CARD_TYPE.JCARDSIMLOCAL); // Use local simulator
         
-        //ECDH 
+        //ECDH- PARAM GEN
        
         X9ECParameters curve = ECNamedCurveTable.getByName("P-256");
         ECDomainParameters ecparams = new ECDomainParameters(curve.getCurve(), curve.getG(), curve.getN(), curve.getH(), curve.getSeed());
@@ -134,22 +133,22 @@ public class SimpleAPDU {
        
          byte[] tosend_T = bigT.getEncoded(true);
         
-        //transmit the S value; S=wN+Y
+        //TRANSMIT THE T VALUE - T = wM+X
      
-        byte apdu_withS[] = new byte[CardMngr.HEADER_LENGTH + tosend_T.length];
-        apdu_withS[CardMngr.OFFSET_CLA] = (byte) 0xB0;
-        apdu_withS[CardMngr.OFFSET_INS] = (byte) 0x54;// 
-        apdu_withS[CardMngr.OFFSET_P1] = (byte) 0x01;
-        apdu_withS[CardMngr.OFFSET_P2] = (byte) 0x00;
-        apdu_withS[CardMngr.OFFSET_LC] = (byte) tosend_T.length;
+        byte apdu_withT[] = new byte[CardMngr.HEADER_LENGTH + tosend_T.length];
+        apdu_withT[CardMngr.OFFSET_CLA] = (byte) 0xB0;
+        apdu_withT[CardMngr.OFFSET_INS] = (byte) 0x54;// 
+        apdu_withT[CardMngr.OFFSET_P1] = (byte) 0x01;
+        apdu_withT[CardMngr.OFFSET_P2] = (byte) 0x00;
+        apdu_withT[CardMngr.OFFSET_LC] = (byte) tosend_T.length;
         
         if(tosend_T.length!=0){
-        System.arraycopy(tosend_T, 0, apdu_withS, CardMngr.OFFSET_DATA, tosend_T.length);
+        System.arraycopy(tosend_T, 0, apdu_withT, CardMngr.OFFSET_DATA, tosend_T.length);
         }
         
         // Transmit single APDU
         //TRANSMIT T TO CARD
-        byte[] responsefromBOB = cardManager.sendAPDUSimulator(apdu_withS);
+        byte[] responsefromBOB = cardManager.sendAPDUSimulator(apdu_withT);
         
       
         //RECIEVE S FROM CARD
@@ -183,7 +182,7 @@ public class SimpleAPDU {
 
         m_aesKey = (AESKey) KeyBuilder.buildKey(KeyBuilder.TYPE_AES, KeyBuilder.LENGTH_AES_256, false);
         m_aesKey.setKey(digest, (short)0);
-        //Generate random seed
+        //GENERATE RANDOM SEED
         m_secureRandom = RandomData.getInstance(RandomData.ALG_SECURE_RANDOM);
         byte [] random_number= new byte[16];
         m_secureRandom.generateData(random_number, (short) 0, (short)random_number.length);
