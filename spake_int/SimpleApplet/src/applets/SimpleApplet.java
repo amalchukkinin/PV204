@@ -26,10 +26,10 @@ import javacardx.crypto.Cipher;
 ;
 
 public class SimpleApplet extends javacard.framework.Applet {
-
+    private static boolean eccDone = false;
+    private static boolean channelEstablished = false;
     private byte secret[] =null;
     
-    final static byte[] PIN_TEST = {(byte) 0x31, (byte) 0x32, (byte) 0x33, (byte) 0x34};
     
     final static byte CLA_SIMPLEAPPLET = (byte) 0xB0;
 
@@ -37,7 +37,11 @@ public class SimpleApplet extends javacard.framework.Applet {
     
     final static byte INS_ECC = (byte) 0x54;
     final static byte INS_DEC = (byte) 0x55;
-
+    final static byte INS_COMMUNICATION  = (byte) 0x56;
+    
+    final BigInteger pinvalue;
+    short pintries = 3;
+    byte messeagecounter = (byte) 0x01;
     
     final static short ARRAY_LENGTH = (short) 0xff;
     final static byte AES_BLOCK_LENGTH = (short) 0x16;
@@ -102,7 +106,8 @@ public class SimpleApplet extends javacard.framework.Applet {
         } 
 
         // register this instance
-        register();
+        pinvalue = new BigInteger(buffer);
+       register();
 
         
     }
@@ -125,6 +130,15 @@ public class SimpleApplet extends javacard.framework.Applet {
      * @return boolean status of selection.
      */
     public boolean select() {
+        eccDone = false;
+        channelEstablished = false;
+        m_aesKey = null;
+        m_hash = null;
+        m_encryptCipherCBC = null;
+        m_decryptCipherCBC = null;
+        m_secureRandom = null;
+        secret = null;
+        messeagecounter = (byte) 0x01;
         
         return true;
     }
@@ -133,6 +147,14 @@ public class SimpleApplet extends javacard.framework.Applet {
      * Deselect method called by the system in the deselection process.
      */
     public void deselect() {
+        eccDone = false;
+        channelEstablished = false;
+        m_aesKey = null;
+        m_hash = null;
+        m_encryptCipherCBC = null;
+        m_decryptCipherCBC = null;
+        m_secureRandom = null;
+        messeagecounter = (byte) 0x01;
     }
 
     
@@ -140,7 +162,9 @@ public class SimpleApplet extends javacard.framework.Applet {
     
      private void GenEccKeyPair(APDU apdu, short len) throws NoSuchAlgorithmException
     {
-        
+        pintries--;
+        if (eccDone || channelEstablished)
+            throw new SecurityException("Replay or other attack detected");
         byte[] buffer = apdu.getBuffer();
 
         byte[] apdubuf = apdu.getBuffer();
@@ -162,46 +186,29 @@ public class SimpleApplet extends javacard.framework.Applet {
         ECPrivateKeyParameters aliceprivate = (ECPrivateKeyParameters) alicePair.getPrivate();
         ECPoint bigY = alicepublic.getQ();
         BigInteger smally = aliceprivate.getD();
-        String s = new String(PIN_TEST);
-        long num = Long.parseLong(s);
-        BigInteger PIN = BigInteger.valueOf(num);
 
         ECPoint bigN = ecparams.getCurve().decodePoint(Hex.decode("03d8bbd6c639c62937b04d997f38c3770719c629d7014d49a24b4f98baa1292b49"));
         ECPoint bigM = ecparams.getCurve().decodePoint(Hex.decode("02886e2f97ace46e55ba9dd7242579f2993b64e16ef3dcab95afd497333d8fa12f"));
        
         ECPoint bigT = ecparams.getCurve().decodePoint(test);
 
-        ECPoint shared2 = bigT.subtract(bigM.multiply(PIN)).multiply(smally);
+        ECPoint shared2 = bigT.subtract(bigM.multiply(pinvalue)).multiply(smally);
         
         secret = shared2.getEncoded(true);
         
-        /*
-        System.out.println("\nPRINTING THE SHARED SECRET IN CARD:");  
-        
-        for (byte b : secret) {
-            String st = String.format("%02X", b);
-            System.out.print(st);
-        }
-        System.out.println("\n");
-
-        */
-
-        //TODO
-        //Y + wN;
-        
-        ECPoint bigS = bigN.multiply(PIN).add(bigY);
+        ECPoint bigS = bigN.multiply(pinvalue).add(bigY);
         byte[] tosend_S = bigS.getEncoded(true);
-         
-        byte test1[] =new byte[tosend_S.length];
         
         System.arraycopy(tosend_S,(short)0,apdubuf,ISO7816.OFFSET_CDATA,tosend_S.length);
-       
+       eccDone = true;
         apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, (short)tosend_S.length); //sending S
         
         
     }
     
     private void symmetric_enc(APDU apdu){
+        if (!eccDone || channelEstablished)
+            throw new SecurityException("Replay or other attack detected");
         byte[] apdubuf = apdu.getBuffer();
         
         short dataLen = apdu.getIncomingLength(); 
@@ -249,12 +256,37 @@ public class SimpleApplet extends javacard.framework.Applet {
         m_encryptCipherCBC.doFinal(dec_random, (short) 0, (short)dec_random.length, reverse_enc,(short)0);
      
         //SEND TO PC
+        channelEstablished = true;
         System.arraycopy(reverse_enc,(short)0,apdubuf,ISO7816.OFFSET_CDATA,reverse_enc.length);
         apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, (short)reverse_enc.length); 
-
-
-
         
+    }
+    
+    private void secureCommunication(APDU apdu) {
+      if (!eccDone || !channelEstablished || pintries < 0)
+            throw new SecurityException("Replay or other attack detected");
+      byte[] apdubuf = apdu.getBuffer();
+      short dataLen = apdu.getIncomingLength(); 
+      // Decryption of arrived messeage
+      byte cipher[]=new byte[dataLen];
+      System.arraycopy(apdubuf,ISO7816.OFFSET_CDATA,cipher,(short)0,dataLen);
+      byte [] dec_messeage= new byte[dataLen];
+      m_decryptCipherCBC.doFinal(cipher, (short) 0, (short) cipher.length, dec_messeage,(short)0);
+      //verify integrity by checking if first 32 bytes include MD5 hash of the rest
+      byte[] expected_digest=new byte[32];
+      m_hash.doFinal(dec_messeage, (short)16, (short) (dec_messeage.length - 16), expected_digest, (short) 0);
+      byte hashcompare = Util.arrayCompare(dec_messeage, (short) 0, expected_digest, (short) 0, (short) 16);
+      if (hashcompare !=(byte) 0x00)
+          throw new SecurityException("Integrity attack detected");
+      // Verify freshness by checking if next byte has the correct counter number
+      if (dec_messeage[16] != messeagecounter)
+          throw new SecurityException("Replay attack detected");
+      byte[] sendingrtries = new byte[1];
+      sendingrtries[0] = (byte) pintries;
+      System.arraycopy(sendingrtries,(short)0,apdubuf,ISO7816.OFFSET_CDATA,sendingrtries.length);
+      messeagecounter++;
+      pintries = 3;
+      apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, (short)sendingrtries.length);
     }
             
     
@@ -274,8 +306,6 @@ public class SimpleApplet extends javacard.framework.Applet {
         byte[] apduBuffer = apdu.getBuffer();
         short len = apdu.setIncomingAndReceive();
 
-        //System.out.println("the length is "+len);
-        // ignore the applet select command dispached to the process
        
         try {
             
@@ -289,6 +319,9 @@ public class SimpleApplet extends javacard.framework.Applet {
                         break;
                     case INS_DEC:
                         symmetric_enc(apdu);
+                        break;
+                    case INS_COMMUNICATION:
+                        secureCommunication(apdu);
                         break;
                     default:
                         // The INS code is not supported by the dispatcher
