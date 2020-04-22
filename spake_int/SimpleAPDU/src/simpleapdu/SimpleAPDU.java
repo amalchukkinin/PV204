@@ -181,7 +181,7 @@ public class SimpleAPDU {
 
         m_hash.doFinal(secret, (short)0, (short)secret.length, digest, (short) 0);
 
-        m_aesKey = (AESKey) KeyBuilder.buildKey(KeyBuilder.TYPE_AES, KeyBuilder.LENGTH_AES_256, false);
+        m_aesKey = (AESKey) KeyBuilder.buildKey(KeyBuilder.TYPE_AES, KeyBuilder.LENGTH_AES_128, false);
         m_aesKey.setKey(digest, (short)0);
         //Generate random seed
         m_secureRandom = RandomData.getInstance(RandomData.ALG_SECURE_RANDOM);
