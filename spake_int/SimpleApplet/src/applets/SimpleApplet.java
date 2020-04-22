@@ -163,7 +163,7 @@ public class SimpleApplet extends javacard.framework.Applet {
      private void GenEccKeyPair(APDU apdu, short len) throws NoSuchAlgorithmException
     {
         pintries--;
-        if (eccDone || channelEstablished)
+        if (channelEstablished || pintries < 0)
             throw new SecurityException("Replay or other attack detected");
         byte[] buffer = apdu.getBuffer();
 
@@ -224,7 +224,7 @@ public class SimpleApplet extends javacard.framework.Applet {
 
         m_hash.doFinal(secret, (short)0, (short)secret.length, digest, (short) 0);
 
-        m_aesKey = (AESKey) KeyBuilder.buildKey(KeyBuilder.TYPE_AES, KeyBuilder.LENGTH_AES_128, false);
+        m_aesKey = (AESKey) KeyBuilder.buildKey(KeyBuilder.TYPE_AES, KeyBuilder.LENGTH_AES_256, false);
         m_aesKey.setKey(digest, (short)0);
         
         //GET INSTANCE-DECRYPTION
@@ -256,15 +256,15 @@ public class SimpleApplet extends javacard.framework.Applet {
         m_encryptCipherCBC.doFinal(dec_random, (short) 0, (short)dec_random.length, reverse_enc,(short)0);
      
         //SEND TO PC
-        channelEstablished = true;
         System.arraycopy(reverse_enc,(short)0,apdubuf,ISO7816.OFFSET_CDATA,reverse_enc.length);
         apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, (short)reverse_enc.length); 
         
     }
     
     private void secureCommunication(APDU apdu) {
-      if (!eccDone || !channelEstablished || pintries < 0)
+      if (!eccDone || pintries < 0)
             throw new SecurityException("Replay or other attack detected");
+      channelEstablished = true;
       byte[] apdubuf = apdu.getBuffer();
       short dataLen = apdu.getIncomingLength(); 
       // Decryption of arrived messeage

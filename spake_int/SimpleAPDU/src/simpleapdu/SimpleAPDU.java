@@ -95,6 +95,11 @@ public class SimpleAPDU {
     }
 
     public void Shared_secret_cal() throws Exception {
+        if(tries_remaining < 1){
+            System.out.println("\nYOU HAVE ENTERD THE MAX LIMIT OF PIN TRY!!");
+            System.exit(0);
+
+            }
         
         
         // Get default configuration for subsequent connection to card (personalized later)
@@ -106,11 +111,6 @@ public class SimpleAPDU {
             Scanner scanner = new Scanner(System.in);
             String inputString = scanner.nextLine();
             
-            if(tries_remaining==0){
-            System.out.println("\nYOU HAVE ENTERD THE MAX LIMIT OF PIN TRY!!");
-            System.exit(0);
-
-            }
         tries_remaining--;
         runCfg.setAppletToSimulate(SimpleApplet.class); // main class of applet to simulate
         runCfg.setTestCardType(RunConfig.CARD_TYPE.JCARDSIMLOCAL); // Use local simulator
@@ -181,7 +181,7 @@ public class SimpleAPDU {
 
         m_hash.doFinal(secret, (short)0, (short)secret.length, digest, (short) 0);
 
-        m_aesKey = (AESKey) KeyBuilder.buildKey(KeyBuilder.TYPE_AES, KeyBuilder.LENGTH_AES_128, false);
+        m_aesKey = (AESKey) KeyBuilder.buildKey(KeyBuilder.TYPE_AES, KeyBuilder.LENGTH_AES_256, false);
         m_aesKey.setKey(digest, (short)0);
         //Generate random seed
         m_secureRandom = RandomData.getInstance(RandomData.ALG_SECURE_RANDOM);
@@ -251,7 +251,12 @@ public class SimpleAPDU {
                 System.out.println("\nYOU HAVE "+(tries_remaining)+" ATTEMPTS LEFT");
                 
                 Shared_secret_cal();
+            } else {
+            System.out.println("\nYOU HAVE ENTERD THE MAX LIMIT OF PIN TRY!!");
+            System.exit(0);
+
             }
+            
             
         }
      
