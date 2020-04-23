@@ -281,13 +281,20 @@ public class SimpleApplet extends javacard.framework.Applet {
       // Verify freshness by checking if next byte has the correct counter number
       if (dec_messeage[16] != messeagecounter)
           throw new SecurityException("Replay attack detected");
-      byte[] sendingrtries = new byte[1];
-      sendingrtries[0] = (byte) pintries;
-      System.arraycopy(sendingrtries,(short)0,apdubuf,ISO7816.OFFSET_CDATA,sendingrtries.length);
+      // Send back encrypted response with PIN tries left
+      messeagecounter++;
+      byte[] sendingrtries = new byte[32];
+      sendingrtries[17] = (byte) pintries;
+      sendingrtries[16] = messeagecounter;
+      m_hash.doFinal(sendingrtries, (short)16, (short) (sendingrtries.length - 16), sendingrtries, (short) 0);
+      byte[] enc_response = new byte[32];
+      m_encryptCipherCBC.doFinal(sendingrtries, (short) 0, (short) sendingrtries.length, enc_response, (short) 0);
+      System.arraycopy(enc_response,(short)0,apdubuf,ISO7816.OFFSET_CDATA,enc_response.length);
       messeagecounter++;
       pintries = 3;
       apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, (short)sendingrtries.length);
     }
+    
             
     
     

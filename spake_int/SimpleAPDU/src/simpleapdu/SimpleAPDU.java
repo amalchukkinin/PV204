@@ -3,7 +3,6 @@ package simpleapdu;
 import applets.SimpleApplet;
 
 import cardTools.RunConfig;
-import cardTools.Util;
 import java.util.Scanner;
 import javacard.framework.OwnerPIN;
 
@@ -40,15 +39,20 @@ public class SimpleAPDU {
         (byte) 0x65, (byte) 0x61, (byte) 0x70, (byte) 0x70, (byte) 0x6C, (byte) 0x65, (byte) 0x74};;
     static CardMngr cardManager = new CardMngr();
     //private static byte APPLET_AID_BYTE[] = Util.hexStringToByteArray(APPLET_AID);
+   
+     private OwnerPIN m_pin = null;
+    
+    private static final String STR_APDU_GETRANDOM = "B054010000";
+    private byte dataArray1[] = null;
+    private byte dataArray2[] = null;
     
     private AESKey m_aesKey = null;
     private MessageDigest m_hash = null;
 
-    private static Cipher m_encryptCipherCBC = null;
-    private static Cipher m_decryptCipherCBC = null;
+    private Cipher m_encryptCipherCBC = null;
+    private Cipher m_decryptCipherCBC = null;
     
     private RandomData m_secureRandom = null;
-    private int tries_remaining = 3;
 
 
     /**
@@ -63,58 +67,58 @@ public class SimpleAPDU {
             SimpleAPDU main = new SimpleAPDU();
             //ask user for pin
              // Prepare simulated card 
-            byte[] installData = {(byte) 0x04, (byte)0xD2}; // no special install data passed now - can be used to pass initial keys etc.
+            byte[] installData = new byte[10]; // no special install data passed now - can be used to pass initial keys etc.
+            //cardManager.prepareLocalSimulatorApplet(APPLET_AID, installData, SimpleApplet.class);
            
             cardManager.prepareLocalSimulatorApplet(APPLET_AID, installData, SimpleApplet.class);
-            main.Shared_secret_cal();
-             byte[] toenc = Util.hexStringToByteArray("076933ff9904d1110d896e2c525e39e501000000000000000000000000000000");
-             byte[] tosend = new byte[32];
-             m_encryptCipherCBC.doFinal(toenc, (short) 0, (short) toenc.length, tosend, (short) 0);
-        
-        //TRANSMIT APDU- FOR FRESHNESS
-     
-        byte apdu_withdata[] = new byte[CardMngr.HEADER_LENGTH + tosend.length];
-        apdu_withdata[CardMngr.OFFSET_CLA] = (byte) 0xB0;
-        apdu_withdata[CardMngr.OFFSET_INS] = (byte) 0x56;// 
-        apdu_withdata[CardMngr.OFFSET_P1] = (byte) 0x01;
-        apdu_withdata[CardMngr.OFFSET_P2] = (byte) 0x00;
-        apdu_withdata[CardMngr.OFFSET_LC] = (byte) tosend.length;
-        
-        if(tosend.length!=0){
-        System.arraycopy(tosend, 0, apdu_withdata, CardMngr.OFFSET_DATA, tosend.length);
-        }
-        
-        // TRANSMIT SINGLE APDU
-        //TRANSMIT T TO CARD
-        byte[] responsefromBOB = cardManager.sendAPDUSimulator(apdu_withdata);
+            byte x=3;
+            main.Shared_secret_cal(x);
             
         } catch (Exception ex) {
             System.out.println("Exception : " + ex);
         }
     }
 
-    public void Shared_secret_cal() throws Exception {
-        if(tries_remaining < 1){
-            System.out.println("\nYOU HAVE ENTERD THE MAX LIMIT OF PIN TRY!!");
-            System.exit(0);
-
-            }
+    public void Shared_secret_cal(byte x) throws Exception {
         
         
         // Get default configuration for subsequent connection to card (personalized later)
         final RunConfig runCfg = RunConfig.getDefaultConfig();
           
-        //ASK THE USER FOR PIN - IN PC
+        //Take pin fro user in PC/Host
         
             System.out.println("WELCOME USER !!!!\nPLEASE ENTER YOUR PIN");
             Scanner scanner = new Scanner(System.in);
             String inputString = scanner.nextLine();
+            byte[]user_pin= inputString.getBytes();
             
-        tries_remaining--;
+            if(x==0){
+            System.out.println("\nYOU HAVE ENTERD THE MAX LIMIT OF PIN TRY!!");
+
+            }
+            m_pin = new OwnerPIN(x, (byte) 4); // 3 tries, 4 digits in pin
+            m_pin.update(user_pin, (byte) 0, (byte) 4);
+
+            //System.out.println("\nTHE PIN ENTERED BY USER AND STORED IN HOST/PC/ALICE IS");
+  
+       
+        // A) If running on physical card
+        // runCfg.setTestCardType(RunConfig.CARD_TYPE.PHYSICAL); // Use real card
+
+        // B) If running in the simulator 
         runCfg.setAppletToSimulate(SimpleApplet.class); // main class of applet to simulate
         runCfg.setTestCardType(RunConfig.CARD_TYPE.JCARDSIMLOCAL); // Use local simulator
+
         
-        //ECDH- PARAM GEN
+        //GENERATE EC PARAMS
+        
+        dataArray1 = new byte[100];
+        javacard.framework.Util.arrayFillNonAtomic(dataArray1, (short) 0, (short) 100, (byte) 0);
+         dataArray2 = new byte[100];
+        javacard.framework.Util.arrayFillNonAtomic(dataArray2, (short) 0, (short) 100, (byte) 0);
+        // Pre-allocate all helper structures
+        
+        //ECDH 
        
         X9ECParameters curve = ECNamedCurveTable.getByName("P-256");
         ECDomainParameters ecparams = new ECDomainParameters(curve.getCurve(), curve.getG(), curve.getN(), curve.getH(), curve.getSeed());
@@ -126,29 +130,34 @@ public class SimpleAPDU {
         ECPrivateKeyParameters bobprivate = (ECPrivateKeyParameters) bobPair.getPrivate();
         ECPoint bigX = bobpublic.getQ();
         BigInteger smallx = bobprivate.getD();
-        BigInteger PIN = BigInteger.valueOf(Integer.parseInt(inputString));
+        String s = new String(user_pin);
+        long num = Long.parseLong(s);
+        BigInteger PIN = BigInteger.valueOf(num);
         ECPoint bigN = ecparams.getCurve().decodePoint(Hex.decode("03d8bbd6c639c62937b04d997f38c3770719c629d7014d49a24b4f98baa1292b49"));
         ECPoint bigM = ecparams.getCurve().decodePoint(Hex.decode("02886e2f97ace46e55ba9dd7242579f2993b64e16ef3dcab95afd497333d8fa12f"));
         ECPoint bigT = bigM.multiply(PIN).add(bigX);
+      
+
+         //TODO T = wM + X
        
          byte[] tosend_T = bigT.getEncoded(true);
         
-        //TRANSMIT THE T VALUE - T = wM+X
+        //transmit the S value; S=wN+Y
      
-        byte apdu_withT[] = new byte[CardMngr.HEADER_LENGTH + tosend_T.length];
-        apdu_withT[CardMngr.OFFSET_CLA] = (byte) 0xB0;
-        apdu_withT[CardMngr.OFFSET_INS] = (byte) 0x54;// 
-        apdu_withT[CardMngr.OFFSET_P1] = (byte) 0x01;
-        apdu_withT[CardMngr.OFFSET_P2] = (byte) 0x00;
-        apdu_withT[CardMngr.OFFSET_LC] = (byte) tosend_T.length;
+        byte apdu_withS[] = new byte[CardMngr.HEADER_LENGTH + tosend_T.length];
+        apdu_withS[CardMngr.OFFSET_CLA] = (byte) 0xB0;
+        apdu_withS[CardMngr.OFFSET_INS] = (byte) 0x54;// 
+        apdu_withS[CardMngr.OFFSET_P1] = (byte) 0x01;
+        apdu_withS[CardMngr.OFFSET_P2] = (byte) 0x00;
+        apdu_withS[CardMngr.OFFSET_LC] = (byte) tosend_T.length;
         
         if(tosend_T.length!=0){
-        System.arraycopy(tosend_T, 0, apdu_withT, CardMngr.OFFSET_DATA, tosend_T.length);
+        System.arraycopy(tosend_T, 0, apdu_withS, CardMngr.OFFSET_DATA, tosend_T.length);
         }
         
         // Transmit single APDU
         //TRANSMIT T TO CARD
-        byte[] responsefromBOB = cardManager.sendAPDUSimulator(apdu_withT);
+        byte[] responsefromBOB = cardManager.sendAPDUSimulator(apdu_withS);
         
       
         //RECIEVE S FROM CARD
@@ -182,7 +191,7 @@ public class SimpleAPDU {
 
         m_aesKey = (AESKey) KeyBuilder.buildKey(KeyBuilder.TYPE_AES, KeyBuilder.LENGTH_AES_256, false);
         m_aesKey.setKey(digest, (short)0);
-        //GENERATE RANDOM SEED
+        //Generate random seed
         m_secureRandom = RandomData.getInstance(RandomData.ALG_SECURE_RANDOM);
         byte [] random_number= new byte[16];
         m_secureRandom.generateData(random_number, (short) 0, (short)random_number.length);
@@ -239,23 +248,18 @@ public class SimpleAPDU {
         }
         
         if(arrayCompare(dec_reverse, (short)0, random_number, (short)0,(short)dec_reverse.length)==0){
-            tries_remaining++;
-            System.out.println("\nSUCCESS ! WELCOME USER");
+            
+             System.out.println("\nSUCCESS ! WELCOME USER");
         }
         
         else{
-            if(tries_remaining !=0)
+            if(m_pin.getTriesRemaining()!=0)
             {
                 System.out.println("\nINCORRECT PIN! PLEASE TRY AGAIN");
-                System.out.println("\nYOU HAVE "+(tries_remaining)+" ATTEMPTS LEFT");
+                System.out.println("\nYOU HAVE "+(m_pin.getTriesRemaining())+" ATTEMPTS LEFT");
                 
-                Shared_secret_cal();
-            } else {
-            System.out.println("\nYOU HAVE ENTERD THE MAX LIMIT OF PIN TRY!!");
-            System.exit(0);
-
+                Shared_secret_cal((byte)(m_pin.getTriesRemaining()-1));
             }
-            
             
         }
      
